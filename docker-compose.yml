@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  claude-ollama-bridge:
+    build: .
+    container_name: claude-ollama-bridge
+    ports:
+      - "8787:8787"
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      - BRIDGE_HOST=0.0.0.0
+      - BRIDGE_PORT=8787
+    env_file:
+      - .env.local
+    volumes:
+      - ./logs:/app/.runtime
+      - ./config:/app/config:ro
+    restart: unless-stopped
+    networks:
+      - bridge-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8787/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Add a reverse proxy (nginx)
+  nginx:
+    image: nginx:alpine
+    container_name: claude-bridge-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - claude-ollama-bridge
+    networks:
+      - bridge-network
+    restart: unless-stopped
+    profiles:
+      - with-proxy
+
+networks:
+  bridge-network:
+    driver: bridge

@@ -1,0 +1,14 @@
+{
+  "claudeCode.disableLoginPrompt": true,
+  "claudeCode.environmentVariables": [
+    {
+      "name": "ANTHROPIC_BASE_URL",
+      "value": "http://127.0.0.1:8787"
+    },
+    {
+      "name": "ANTHROPIC_AUTH_TOKEN",
+      "value": "bridge-local"
+    }
+  ]
+}
+

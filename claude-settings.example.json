@@ -1,0 +1,9 @@
+{
+  "model": "ollama-free-auto",
+  "availableModels": [
+    "ollama-free-auto",
+    "ollama-free-fast",
+    "ollama-free-tools"
+  ]
+}
+

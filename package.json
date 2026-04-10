@@ -1,0 +1,70 @@
+{
+  "name": "loren-code",
+  "version": "0.1.0",
+  "description": "Ollama Cloud Model Manager - Dynamic model switching, API key rotation, and real-time configuration updates",
+  "author": "lorenzune",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lorenzune/loren-code.git"
+  },
+  "homepage": "https://github.com/lorenzune/loren-code#readme",
+  "bugs": {
+    "url": "https://github.com/lorenzune/loren-code/issues"
+  },
+  "keywords": [
+    "ollama",
+    "ollama-cloud",
+    "claude",
+    "claude-code",
+    "ai",
+    "llm",
+    "model-manager",
+    "cli",
+    "bridge"
+  ],
+  "type": "module",
+  "main": "src/server.js",
+  "bin": {
+    "loren": "scripts/loren.js"
+  },
+  "files": [
+    "scripts/ClaudeWrapperLauncher.cs",
+    "scripts/claude-wrapper.js",
+    "scripts/install-claude-ollama.ps1",
+    "scripts/loren.js",
+    "scripts/uninstall-claude-ollama.ps1",
+    "src/*.js",
+    ".env.example",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node src/server.js",
+    "loren": "node scripts/loren.js",
+    "install:claude": "powershell -ExecutionPolicy Bypass -File scripts/install-claude-ollama.ps1",
+    "uninstall:claude": "powershell -ExecutionPolicy Bypass -File scripts/uninstall-claude-ollama.ps1",
+    "model:list": "node scripts/loren.js model:list",
+    "model:set": "node scripts/loren.js model:set",
+    "model:current": "node scripts/loren.js model:current",
+    "model:refresh": "node scripts/loren.js model:refresh",
+    "keys:list": "node scripts/loren.js keys:list",
+    "keys:add": "node scripts/loren.js keys:add",
+    "keys:remove": "node scripts/loren.js keys:remove",
+    "keys:rotate": "node scripts/loren.js keys:rotate",
+    "config:show": "node scripts/loren.js config:show",
+    "help": "node scripts/loren.js help",
+    "smoke": "node scripts/smoke-test.js",
+    "check:publish": "node scripts/publish-check.js",
+    "prepublishOnly": "npm test && npm run lint",
+    "test": "node scripts/publish-check.js",
+    "lint": "node -e \"console.log('No linter configured')\""
+  },
+  "dependencies": {
+    "node-cache": "^5.1.2",
+    "winston": "^3.19.0",
+    "zod": "^4.3.6"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
