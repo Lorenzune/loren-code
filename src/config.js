@@ -1,11 +1,11 @@
 import fs from "node:fs";
-import path from "node:path";
+import { getEnvFilePath } from "./paths.js";
 
 const DEFAULT_PORT = 8788;
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_UPSTREAM = "https://ollama.com";
 
-export function loadEnvFile(filePath = path.join(process.cwd(), ".env.local")) {
+export function loadEnvFile(filePath = getEnvFilePath()) {
   if (!fs.existsSync(filePath)) {
     return {};
   }
@@ -68,8 +68,8 @@ export function saveEnvFile(filePath, envVars) {
   fs.writeFileSync(filePath, `${lines}\n`, "utf8");
 }
 
-export function loadConfig() {
-  const fileEnv = loadEnvFile();
+export function loadConfig(filePath = getEnvFilePath()) {
+  const fileEnv = loadEnvFile(filePath);
   const getValue = (name, fallback = undefined) => {
     if (Object.prototype.hasOwnProperty.call(fileEnv, name)) {
       return fileEnv[name];

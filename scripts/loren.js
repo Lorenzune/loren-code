@@ -5,11 +5,13 @@ import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadConfig, loadEnvFile, saveEnvFile } from "../src/config.js";
 import { ensureEnvLocal, ensureRuntimeDir, getBridgeBaseUrl } from "../src/bootstrap.js";
+import { getEnvFilePath, getLorenHome, getRuntimeDir } from "../src/paths.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
-const envFilePath = path.join(projectRoot, ".env.local");
-const runtimeDir = path.join(projectRoot, ".runtime");
+const lorenHome = getLorenHome();
+const envFilePath = getEnvFilePath();
+const runtimeDir = getRuntimeDir();
 const pidFilePath = path.join(runtimeDir, "loren.pid");
 const logFilePath = path.join(runtimeDir, "bridge.log");
 const errorLogFilePath = path.join(runtimeDir, "bridge.err.log");
@@ -18,8 +20,8 @@ const claudeSettingsPath = path.join(userHome, ".claude", "settings.json");
 
 // Force working directory to project root for config loading
 process.chdir(projectRoot);
-ensureRuntimeDir(projectRoot);
-ensureEnvLocal(projectRoot);
+const runtimePath = ensureRuntimeDir();
+const envStatus = ensureEnvLocal(projectRoot);
 
 const ASCII_LOGO = `
 ██╗      ██████╗ ██████╗ ███████╗███╗   ██╗     ██████╗ ██████╗ ██████╗ ███████╗
@@ -56,9 +58,11 @@ const COMMANDS = {
 function main() {
   const args = process.argv.slice(2);
   const [command] = args;
+  const config = loadConfig();
 
   if (!command || command === "help" || command === "--help" || command === "-h") {
     printHelp();
+    maybePrintSetupHint(config);
     process.exit(0);
   }
 
@@ -336,6 +340,9 @@ function showConfig() {
 
   console.log("\nCurrent Configuration:");
   console.log("─".repeat(40));
+  console.log(`  Home:        ${lorenHome}`);
+  console.log(`  Env File:    ${envFilePath}`);
+  console.log(`  Runtime:     ${runtimePath}`);
   console.log(`  Host:        ${config.host}`);
   console.log(`  Port:        ${config.port}`);
   console.log(`  Upstream:    ${config.upstreamBaseUrl}`);
@@ -495,6 +502,29 @@ function syncClaudeSelectedModel(model) {
 
   settings.model = model;
   fs.writeFileSync(claudeSettingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+}
+
+function maybePrintSetupHint(config) {
+  if (!envStatus.created && config.apiKeys.length > 0) {
+    return;
+  }
+
+  console.log("Setup:");
+  console.log(`  Loren home: ${lorenHome}`);
+  console.log(`  Config file: ${envFilePath}`);
+
+  if (envStatus.migrated) {
+    console.log("  Existing configuration was migrated automatically.");
+  } else if (envStatus.created) {
+    console.log("  A new config file was created automatically.");
+  }
+
+  if (config.apiKeys.length === 0) {
+    console.log("  Add OLLAMA_API_KEYS to finish setup.");
+  }
+
+  console.log("  Then run: loren start");
+  console.log("");
 }
 
 // ============== HELP ==============

@@ -1,9 +1,10 @@
 import winston from 'winston';
+import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { getRuntimeDir } from './paths.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const runtimeDir = getRuntimeDir();
+fs.mkdirSync(runtimeDir, { recursive: true });
 
 const logFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
@@ -24,22 +25,22 @@ const logger = winston.createLogger({
       )
     }),
     new winston.transports.File({
-      filename: path.join(__dirname, '..', '.runtime', 'error.log'),
+      filename: path.join(runtimeDir, 'error.log'),
       level: 'error',
       maxsize: 5242880, // 5MB
       maxFiles: 5
     }),
     new winston.transports.File({
-      filename: path.join(__dirname, '..', '.runtime', 'combined.log'),
+      filename: path.join(runtimeDir, 'combined.log'),
       maxsize: 5242880, // 5MB
       maxFiles: 5
     })
   ],
   exceptionHandlers: [
-    new winston.transports.File({ filename: path.join(__dirname, '..', '.runtime', 'exceptions.log') })
+    new winston.transports.File({ filename: path.join(runtimeDir, 'exceptions.log') })
   ],
   rejectionHandlers: [
-    new winston.transports.File({ filename: path.join(__dirname, '..', '.runtime', 'rejections.log') })
+    new winston.transports.File({ filename: path.join(runtimeDir, 'rejections.log') })
   ]
 });
 

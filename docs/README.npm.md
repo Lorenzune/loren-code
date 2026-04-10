@@ -20,7 +20,13 @@ loren help
 
 ## First Run
 
-Loren creates `.env.local` automatically if it does not exist.
+Loren stores user config in `%USERPROFILE%\.lorencode`.
+
+On first run it creates:
+
+```text
+C:\Users\<you>\.lorencode\.env.local
+```
 
 You must add valid `OLLAMA_API_KEYS` before the bridge can make upstream requests.
 If you configure multiple keys, Loren rotates them automatically.
@@ -107,11 +113,11 @@ npm.cmd install -g loren-code
 
 ### Missing API keys
 
-Populate `OLLAMA_API_KEYS` in `.env.local`.
+Populate `OLLAMA_API_KEYS` in `%USERPROFILE%\.lorencode\.env.local`.
 
 ### Port already in use
 
-Change `BRIDGE_PORT` in `.env.local`.
+Change `BRIDGE_PORT` in `%USERPROFILE%\.lorencode\.env.local`.
 
 ## Repository
 

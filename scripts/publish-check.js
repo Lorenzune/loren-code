@@ -51,7 +51,7 @@ function main() {
   const gitignorePath = path.join(projectRoot, ".gitignore");
   if (fs.existsSync(gitignorePath)) {
     const gitignore = fs.readFileSync(gitignorePath, "utf8");
-    for (const entry of [".env.local", ".runtime"]) {
+    for (const entry of [".env.local", ".runtime", ".lorencode/"]) {
       if (!gitignore.includes(entry)) {
         fail(`.gitignore should exclude ${entry}`);
       }

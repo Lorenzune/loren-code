@@ -5,18 +5,19 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { ensureEnvLocal, ensureRuntimeDir, getBridgeBaseUrl } from "../src/bootstrap.js";
 import { loadConfig } from "../src/config.js";
+import { getEnvFilePath, getRuntimeDir } from "../src/paths.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
-const stateDir = path.join(repoRoot, ".runtime");
+const stateDir = getRuntimeDir();
 const bridgePidPath = path.join(stateDir, "bridge.pid");
 const bridgeLogPath = path.join(stateDir, "bridge.log");
-const envFilePath = path.join(repoRoot, ".env.local");
+const envFilePath = getEnvFilePath();
 
 async function main() {
   process.chdir(repoRoot);
-  ensureRuntimeDir(repoRoot);
+  ensureRuntimeDir();
   ensureEnvLocal(repoRoot);
   const bridgeConfig = loadConfig();
   const bridgeBaseUrl = getBridgeBaseUrl(bridgeConfig);

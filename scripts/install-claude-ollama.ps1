@@ -3,13 +3,16 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $userProfile = [Environment]::GetFolderPath("UserProfile")
 $appData = [Environment]::GetFolderPath("ApplicationData")
+$lorenHome = if ($env:LOREN_HOME) { $env:LOREN_HOME } else { Join-Path $userProfile ".lorencode" }
 $workspaceSettingsDir = Join-Path $appData "Code\\User"
 $workspaceSettingsPath = Join-Path $workspaceSettingsDir "settings.json"
 $claudeDir = Join-Path $userProfile ".claude"
 $claudeSettingsPath = Join-Path $claudeDir "settings.json"
 $launcherSourcePath = Join-Path $repoRoot "scripts\\ClaudeWrapperLauncher.cs"
 $launcherExePath = Join-Path $repoRoot "scripts\\ClaudeWrapperLauncher.exe"
-$envPath = Join-Path $repoRoot ".env.local"
+$envTemplatePath = Join-Path $repoRoot ".env.example"
+$legacyEnvPath = Join-Path $repoRoot ".env.local"
+$envPath = Join-Path $lorenHome ".env.local"
 $npmBinDir = Join-Path $appData "npm"
 $claudeCmdPath = Join-Path $npmBinDir "claude.cmd"
 $claudeShellPath = Join-Path $npmBinDir "claude"
@@ -18,13 +21,20 @@ $claudeCmdBackupPath = Join-Path $npmBinDir "claude.loren-backup.cmd"
 $claudeShellBackupPath = Join-Path $npmBinDir "claude.loren-backup"
 $claudePs1BackupPath = Join-Path $npmBinDir "claude.loren-backup.ps1"
 
-if (-not (Test-Path $envPath)) {
-  throw ".env.local not found. Create it first with OLLAMA_API_KEYS."
-}
-
 New-Item -ItemType Directory -Force -Path $workspaceSettingsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $claudeDir | Out-Null
+New-Item -ItemType Directory -Force -Path $lorenHome | Out-Null
 New-Item -ItemType Directory -Force -Path $npmBinDir | Out-Null
+
+if (-not (Test-Path $envPath)) {
+  if (Test-Path $legacyEnvPath) {
+    Copy-Item -LiteralPath $legacyEnvPath -Destination $envPath -Force
+  } elseif (Test-Path $envTemplatePath) {
+    Copy-Item -LiteralPath $envTemplatePath -Destination $envPath -Force
+  } else {
+    Set-Content -LiteralPath $envPath -Value "OLLAMA_API_KEYS=`nBRIDGE_HOST=127.0.0.1`nBRIDGE_PORT=8788`n" -Encoding UTF8
+  }
+}
 
 function Read-JsonFile {
   param([string]$Path)
@@ -198,6 +208,10 @@ $workspaceSettings["claudeCode.claudeProcessWrapper"] = $launcherExePath
 $workspaceSettings["claudeCode.disableLoginPrompt"] = $true
 $workspaceSettings["claudeCode.environmentVariables"] = @(
   @{
+    name = "LOREN_HOME"
+    value = $lorenHome
+  },
+  @{
     name = "ANTHROPIC_BASE_URL"
     value = $bridgeBaseUrl
   },
@@ -271,9 +285,11 @@ $ps1Content = @"
 Set-Content -LiteralPath $claudePs1Path -Value $ps1Content -Encoding UTF8
 
 Write-Host "Installation completed."
+Write-Host "Loren home:" $lorenHome
 Write-Host "Claude launcher:" $launcherExePath
 Write-Host "VS Code user settings:" $workspaceSettingsPath
 Write-Host "Claude user settings:" $claudeSettingsPath
+Write-Host "Loren config:" $envPath
 Write-Host "Global Claude command:" $claudeCmdPath
 Write-Host ""
 Write-Host "Restart VS Code. Claude Code will use the bridge in any project."

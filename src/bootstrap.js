@@ -1,17 +1,28 @@
 import fs from "node:fs";
 import path from "node:path";
+import { getEnvFilePath, getLegacyEnvFilePath, getLorenHome, getRuntimeDir } from "./paths.js";
 
-export function ensureRuntimeDir(projectRoot) {
-  fs.mkdirSync(path.join(projectRoot, ".runtime"), { recursive: true });
+export function ensureRuntimeDir() {
+  fs.mkdirSync(getLorenHome(), { recursive: true });
+  fs.mkdirSync(getRuntimeDir(), { recursive: true });
+  return getRuntimeDir();
 }
 
 export function ensureEnvLocal(projectRoot, options = {}) {
-  const envLocalPath = path.join(projectRoot, ".env.local");
+  const envLocalPath = getEnvFilePath();
+  const legacyEnvPath = getLegacyEnvFilePath(projectRoot);
   const envExamplePath = path.join(projectRoot, ".env.example");
   const logger = options.logger ?? console;
+  fs.mkdirSync(getLorenHome(), { recursive: true });
 
   if (fs.existsSync(envLocalPath)) {
     return { created: false, path: envLocalPath };
+  }
+
+  if (fs.existsSync(legacyEnvPath) && legacyEnvPath !== envLocalPath) {
+    fs.copyFileSync(legacyEnvPath, envLocalPath);
+    logger.warn?.(`Migrated existing config from ${legacyEnvPath} to ${envLocalPath}.`);
+    return { created: true, migrated: true, path: envLocalPath };
   }
 
   if (!fs.existsSync(envExamplePath)) {

@@ -15,7 +15,7 @@ The npm package uses a separate README tailored to package installation and firs
 - runs a local bridge on port `8788`
 - manages Ollama Cloud model aliases
 - rotates API keys across multiple Ollama Cloud keys
-- bootstraps `.env.local` and `.runtime` on first run
+- stores config and runtime state under `%USERPROFILE%\.lorencode`
 - includes helper scripts for Claude Code integration on Windows
 
 ## Intended Usage
@@ -52,10 +52,17 @@ The published package has a dedicated npm-focused README.
 
 ## Local Setup
 
-If `.env.local` does not exist, Loren creates it from `.env.example`.
+If `%USERPROFILE%\.lorencode\.env.local` does not exist, Loren creates it automatically from `.env.example`.
 
 You still need to add real `OLLAMA_API_KEYS`.
 If you use multiple keys, Loren rotates them automatically.
+
+Main user paths on Windows:
+
+```text
+C:\Users\<you>\.lorencode\.env.local
+C:\Users\<you>\.lorencode\runtime\
+```
 
 Example:
 

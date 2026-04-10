@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.js";
 import { ensureEnvLocal, ensureRuntimeDir } from "./bootstrap.js";
+import { getEnvFilePath } from "./paths.js";
 import logger from "./logger.js";
 import { KeyManager } from "./key-manager.js";
 import { validateInput, MessageSchema, CountTokensSchema } from "./schemas.js";
@@ -20,12 +21,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
 
-ensureRuntimeDir(projectRoot);
+ensureRuntimeDir();
 ensureEnvLocal(projectRoot, { logger });
 
 let config = loadConfig();
 let keyManager = new KeyManager(config.apiKeys);
-const envFilePath = path.join(projectRoot, ".env.local");
+const envFilePath = getEnvFilePath();
 
 function reloadRuntimeConfig() {
   config = loadConfig();
@@ -57,7 +58,7 @@ process.on('SIGTERM', () => {
 });
 
 if (!config.apiKeys.length) {
-  logger.error('No Ollama API keys found. Set OLLAMA_API_KEYS or OLLAMA_API_KEY in the environment or .env.local.');
+  logger.error(`No Ollama API keys found. Set OLLAMA_API_KEYS or OLLAMA_API_KEY in the environment or ${envFilePath}.`);
   process.exit(1);
 }
 
