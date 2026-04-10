@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.join(__dirname, '..');
 const baseUrl = getBridgeBaseUrl(loadConfig());
 
-// Colori per output
+// Output colors
 const colors = {
   green: '\x1b[32m',
   red: '\x1b[31m',
@@ -66,7 +66,7 @@ const tests = [
   runTest('Logging system (Winston)', async () => {
     await checkFileExists(path.join(rootDir, 'src/logger.js'));
 
-    // Avvia server brevemente per generare log
+    // Start the server briefly to generate log files
     const server = spawn('node', ['src/server.js'], {
       cwd: rootDir,
       detached: true,
@@ -249,7 +249,7 @@ async function runAllTests() {
   }
 }
 
-// Check if server is running before tests
+// Check whether the server is running before tests
 async function checkServer() {
   try {
     await checkHttp(`${baseUrl}/health`);

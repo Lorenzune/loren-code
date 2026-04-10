@@ -11,7 +11,7 @@ export class KeyManager {
     }));
     this.index = 0;
     this.maxFailures = 3;
-    this.failureWindowMs = 5 * 60 * 1000; // 5 minuti
+    this.failureWindowMs = 5 * 60 * 1000; // 5 minutes
   }
 
   async getHealthyKey() {
@@ -21,7 +21,7 @@ export class KeyManager {
     do {
       const keyInfo = this.keys[this.index];
 
-      // Resetta lo stato se è passato abbastanza tempo dall'ultimo fallimento
+      // Reset key state if enough time has passed since the last failure
       if (keyInfo.lastFailure && (now - keyInfo.lastFailure) > this.failureWindowMs) {
         keyInfo.failureCount = 0;
         keyInfo.healthy = true;

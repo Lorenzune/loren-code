@@ -55,7 +55,7 @@ export function getAgentStats() {
   };
 }
 
-// Cleanup function per chiudere tutti gli agent
+// Cleanup function to close all agents
 export function closeAgents() {
   return new Promise((resolve) => {
     let pending = 2;

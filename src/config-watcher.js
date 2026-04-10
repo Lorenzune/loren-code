@@ -7,7 +7,7 @@ export class ConfigWatcher {
     this.configFile = configFile;
     this.onChange = onChange;
     this.watcher = null;
-    this.debounceTimeout = 1000; // 1 secondo
+    this.debounceTimeout = 1000; // 1 second
     this.debounceTimer = null;
   }
 
@@ -45,7 +45,7 @@ export class ConfigWatcher {
   }
 
   handleChange() {
-    // Debounce per evitare multipli reload rapidi
+    // Debounce to avoid multiple rapid reloads
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
@@ -62,7 +62,7 @@ export class ConfigWatcher {
   }
 }
 
-// Funzione helper per creare un config watcher con reload automatico
+// Helper to create a config watcher with automatic reload
 export function createConfigWatcher(configFile, loadConfigFunction) {
   const watcher = new ConfigWatcher(configFile, async () => {
     const newConfig = loadConfigFunction();

@@ -12,7 +12,7 @@ $launcherExePath = Join-Path $repoRoot "scripts\\ClaudeWrapperLauncher.exe"
 $envPath = Join-Path $repoRoot ".env.local"
 
 if (-not (Test-Path $envPath)) {
-  throw ".env.local non trovato. Crea prima il file con OLLAMA_API_KEYS."
+  throw ".env.local not found. Create it first with OLLAMA_API_KEYS."
 }
 
 New-Item -ItemType Directory -Force -Path $workspaceSettingsDir | Out-Null
@@ -70,6 +70,19 @@ function Get-EnvValue {
 }
 
 function Get-CSharpCompiler {
+  $command = Get-Command csc -ErrorAction SilentlyContinue
+  if ($command -and $command.Source -and (Test-Path $command.Source)) {
+    return $command.Source
+  }
+
+  $runtimeDir = [Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()
+  if (-not [string]::IsNullOrWhiteSpace($runtimeDir)) {
+    $runtimeCandidate = Join-Path $runtimeDir "csc.exe"
+    if (Test-Path $runtimeCandidate) {
+      return $runtimeCandidate
+    }
+  }
+
   $candidates = @(
     "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe",
     "C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe"
@@ -81,7 +94,7 @@ function Get-CSharpCompiler {
     }
   }
 
-  throw "Compilatore C# non trovato. Impossibile generare il launcher .exe."
+  throw "C# compiler not found. Unable to generate the launcher .exe."
 }
 
 function Get-OllamaAvailableModels {
@@ -133,7 +146,7 @@ function Get-OllamaAvailableModels {
       }
     }
   } catch {
-    Write-Warning "Impossibile caricare la lista modelli da Ollama Cloud. Continuo con alias e target locali."
+    Write-Warning "Unable to load the model list from Ollama Cloud. Continuing with local aliases and targets."
   }
 
   return $models
@@ -143,9 +156,9 @@ $compilerPath = Get-CSharpCompiler
 & $compilerPath "/nologo" "/target:exe" "/out:$launcherExePath" $launcherSourcePath | Out-Null
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $launcherExePath)) {
   if (Test-Path $launcherExePath) {
-    Write-Warning "Compilazione launcher fallita, ma uso il launcher esistente."
+    Write-Warning "Launcher compilation failed, but an existing launcher will be used."
   } else {
-    throw "Compilazione del launcher fallita."
+    throw "Launcher compilation failed."
   }
 }
 
@@ -157,7 +170,7 @@ Write-JsonFile -Path $workspaceSettingsPath -Data $workspaceSettings
 $claudeSettings = Read-JsonFile -Path $claudeSettingsPath
 $aliasJson = Get-EnvValue -Path $envPath -Name "OLLAMA_MODEL_ALIASES"
 if (-not $aliasJson) {
-  throw "OLLAMA_MODEL_ALIASES non trovato in .env.local"
+  throw "OLLAMA_MODEL_ALIASES not found in .env.local"
 }
 
 $parsedAliases = $aliasJson | ConvertFrom-Json
@@ -168,7 +181,7 @@ foreach ($property in $parsedAliases.PSObject.Properties) {
 $availableModels = Get-OllamaAvailableModels -EnvPath $envPath -Aliases $aliases
 
 if ($availableModels.Count -eq 0) {
-  throw "OLLAMA_MODEL_ALIASES non contiene modelli"
+  throw "OLLAMA_MODEL_ALIASES does not contain any models"
 }
 
 $defaultModel = if ($aliases.ContainsKey("ollama-free-auto")) { "ollama-free-auto" } else { $availableModels[0] }
@@ -176,9 +189,9 @@ $claudeSettings["model"] = $defaultModel
 $claudeSettings["availableModels"] = $availableModels
 Write-JsonFile -Path $claudeSettingsPath -Data $claudeSettings
 
-Write-Host "Installazione completata."
-Write-Host "Launcher Claude:" $launcherExePath
+Write-Host "Installation completed."
+Write-Host "Claude launcher:" $launcherExePath
 Write-Host "VS Code user settings:" $workspaceSettingsPath
 Write-Host "Claude user settings:" $claudeSettingsPath
 Write-Host ""
-Write-Host "Riavvia VS Code. Claude Code usera il bridge in qualsiasi progetto."
+Write-Host "Restart VS Code. Claude Code will use the bridge in any project."

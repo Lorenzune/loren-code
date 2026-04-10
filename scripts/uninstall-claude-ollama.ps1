@@ -70,4 +70,4 @@ if (Test-Path $launcherExePath) {
   Remove-Item -LiteralPath $launcherExePath -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "Configurazione globale rimossa."
+Write-Host "Global configuration removed."

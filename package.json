@@ -1,6 +1,6 @@
 {
   "name": "loren-code",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Ollama Cloud Model Manager - Dynamic model switching, API key rotation, and real-time configuration updates",
   "author": "lorenzune",
   "license": "MIT",
@@ -55,6 +55,8 @@
     "help": "node scripts/loren.js help",
     "smoke": "node scripts/smoke-test.js",
     "check:publish": "node scripts/publish-check.js",
+    "prepack": "node scripts/sync-readme.js npm",
+    "postpack": "node scripts/sync-readme.js github",
     "prepublishOnly": "npm test && npm run lint",
     "test": "node scripts/publish-check.js",
     "lint": "node -e \"console.log('No linter configured')\""

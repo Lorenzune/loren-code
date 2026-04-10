@@ -15,7 +15,7 @@ import { getMetrics, incrementError, recordTokenUsage, metricsMiddleware } from 
 import { createConfigWatcher } from "./config-watcher.js";
 import usageTracker from "./usage-tracker.js";
 
-// Configurazione globale
+// Global runtime state
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
@@ -25,7 +25,7 @@ ensureEnvLocal(projectRoot, { logger });
 
 let config = loadConfig();
 let keyManager = new KeyManager(config.apiKeys);
-const envFilePath = path.resolve(process.cwd(), ".env.local");
+const envFilePath = path.join(projectRoot, ".env.local");
 
 function reloadRuntimeConfig() {
   config = loadConfig();
@@ -35,15 +35,15 @@ function reloadRuntimeConfig() {
 }
 
 // Config watcher
-const configWatcher = createConfigWatcher('.env.local', () => {
+const configWatcher = createConfigWatcher(envFilePath, () => {
   reloadRuntimeConfig();
   void probeAllApiKeys();
 });
 
-// Avvia il watcher
+// Start the watcher
 configWatcher.start();
 
-// Cleanup alla chiusura
+// Cleanup on shutdown
 process.on('SIGINT', () => {
   logger.info('Shutting down gracefully...');
   configWatcher.stop();
@@ -62,7 +62,7 @@ if (!config.apiKeys.length) {
 }
 
 const server = http.createServer(async (req, res) => {
-  // Applica il middleware di metriche
+  // Apply metrics middleware
   metricsMiddleware(req, res, () => {});
 
   try {
@@ -106,7 +106,7 @@ async function routeRequest(req, res) {
 
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
-  // Log della richiesta
+  // Request logging
   logger.info(`${req.method} ${url.pathname}`, {
     ip: req.socket.remoteAddress,
     userAgent: req.headers['user-agent']
@@ -134,7 +134,7 @@ async function routeRequest(req, res) {
     return;
   }
 
-  // Usage API endpoint (GET per dati, POST per reset)
+  // Usage API endpoint (GET for data, POST for reset)
   if (url.pathname === "/api/usage" && (req.method === "GET" || req.method === "POST")) {
     await handleUsage(req, res);
     return;
@@ -192,7 +192,7 @@ async function handleHealth(_req, res) {
 }
 
 async function handleMetrics(_req, res) {
-  // Aggiorna cache stats
+  // Refresh cache stats
   const cacheStats = {
     models: getCacheStats(modelCache, 'models')
   };
@@ -316,7 +316,7 @@ async function handleEvents(req, res) {
 
 async function handleDashboard(_req, res) {
   try {
-    // Usa il percorso corretto per il file dashboard.html
+    // Resolve the dashboard.html path relative to this module
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
     const dashboardPath = path.join(__dirname, 'dashboard.html');
@@ -392,7 +392,7 @@ async function handleUsage(req, res) {
   try {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
-    // Supporta reset via query parameter: /api/usage?reset=true
+    // Support reset via query parameter: /api/usage?reset=true
     if (url.searchParams.get('reset') === 'true') {
       usageTracker.resetAll();
       sendJson(res, 200, { ok: true, message: 'Usage data reset successfully' });
@@ -401,7 +401,7 @@ async function handleUsage(req, res) {
 
     const usageData = usageTracker.getDashboardData();
 
-    // Aggiungi informazioni sui rate limit attivi
+    // Add active rate limit details
     const rateLimitedKeys = usageData.keys.filter(k => k.isRateLimited);
 
     sendJson(res, 200, {
@@ -518,7 +518,7 @@ async function handleMessages(req, res) {
   try {
     const body = await readJson(req);
 
-    // Valida input
+    // Validate input
     const validatedBody = validateInput(MessageSchema, body);
 
     const anthropicRequest = normalizeAnthropicRequest(validatedBody);
@@ -547,7 +547,7 @@ async function handleMessages(req, res) {
     const payload = await upstream.json();
     const message = ollamaToAnthropicMessage(payload, anthropicRequest.model);
 
-    // Registra token usage con la chiave specifica
+    // Record token usage for the specific API key
     usageTracker.recordUsage(apiKey, message.usage?.output_tokens || 0);
     recordTokenUsage(
       anthropicRequest.model,
@@ -602,7 +602,7 @@ async function handleCountTokens(req, res) {
   }
 }
 
-// Resto delle funzioni helper (abbreviate per brevità)
+// Remaining helper functions
 function normalizeAnthropicRequest(body) {
   const requestedModel = body.model || config.defaultModel;
   return {
@@ -765,12 +765,11 @@ function ollamaToAnthropicMessage(payload, requestedModel) {
     });
   }
 
-  // Traccia l'usage con i token reali
+  // Track usage with actual token counts
   const inputTokens = payload.prompt_eval_count || 0;
   const outputTokens = payload.eval_count || 0;
 
-  // Qui dovremmo avere l'API key usata, ma per ora usiamo un approccio diverso
-  // Lo tracceremo a livello superiore
+  // The API key is tracked at a higher level for now
 
   return {
     id: `msg_${randomUUID().replace(/-/g, "")}`,
@@ -912,7 +911,7 @@ async function pipeStreamingResponse(upstream, request, res, apiKey) {
               nextIndex += 1;
             }
 
-            // Registra token usage con la chiave specifica (anche per streaming)
+            // Record token usage for the specific API key, including streaming responses
             usageTracker.recordUsage(apiKey, outputTokens || estimateTokens(aggregatedText));
             recordTokenUsage(
               request.model,
@@ -988,7 +987,7 @@ function mapDoneReason(reason) {
 }
 
 async function fetchUpstream(pathname, init) {
-  // Controlla prima se ci sono chiavi rate limited e suggerisci la migliore
+  // Check for rate-limited keys first and pick the best candidate
   const suggestedKey = usageTracker.suggestNextKey(config.apiKeys);
   if (!suggestedKey) {
     throw new Error('All API keys are rate limited');
@@ -999,10 +998,10 @@ async function fetchUpstream(pathname, init) {
   try {
     const response = await performUpstreamFetch(apiKey, pathname, init);
 
-    // Traccia l'usage (indipendentemente dal successo)
-    usageTracker.recordUsage(apiKey, 0); // Tokens verranno aggiornati dopo
+    // Track usage regardless of request success
+    usageTracker.recordUsage(apiKey, 0); // Token counts are updated later
 
-    // Controlla risposte di rate limit
+    // Handle upstream rate limit responses
     if (response.status === 429) {
       let detailsText = '';
       let reason = 'Rate limit reached';
@@ -1040,7 +1039,7 @@ async function fetchUpstream(pathname, init) {
       usageTracker.markHealthy(apiKey);
     }
 
-    // Restituisci sia la response che la chiave usata
+    // Return both the response and the API key that was used
     return { response, apiKey };
   } catch (error) {
     keyManager.markKeyFailed(suggestedKey, error);

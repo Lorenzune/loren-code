@@ -1,21 +1,21 @@
 import NodeCache from 'node-cache';
 import logger from './logger.js';
 
-// Cache per i modelli (5 minuti di TTL)
+// Cache for models (5 minute TTL)
 export const modelCache = new NodeCache({
-  stdTTL: 300, // 5 minuti
-  checkperiod: 60, // Controlla ogni minuto se ci sono entry scadute
-  useClones: false // Performance migliore se non usiamo clones
+  stdTTL: 300, // 5 minutes
+  checkperiod: 60, // Check for expired entries every minute
+  useClones: false // Better performance when values are not cloned
 });
 
-// Cache per le risposte delle API (30 secondi)
+// Cache for API responses (30 seconds)
 export const apiCache = new NodeCache({
   stdTTL: 30,
   checkperiod: 10,
   useClones: false
 });
 
-// Funzione helper per il caching con error handling
+// Helper for cache access with error handling
 export function getFromCache(cache, key) {
   try {
     const value = cache.get(key);
@@ -51,7 +51,7 @@ export function deleteFromCache(cache, key) {
   }
 }
 
-// Stats per il monitoraggio
+// Monitoring stats
 export function getCacheStats(cache, name) {
   const stats = cache.getStats();
   return {

@@ -1,8 +1,8 @@
 import logger from './logger.js';
 
-// Metriche raccolte
+// Collected metrics
 const metrics = {
-  // Contatori
+  // Counters
   requests: {
     total: 0,
     byEndpoint: {
@@ -29,7 +29,7 @@ const metrics = {
       other: 0
     }
   },
-  // Tempi di risposta
+  // Response times
   responseTimes: [],
   // Token usage
   tokens: {
@@ -39,13 +39,13 @@ const metrics = {
   },
   // Uptime
   startTime: Date.now(),
-  // Connessioni attive
+  // Active connections
   activeConnections: 0,
   // Cache stats
   cacheStats: {}
 };
 
-// Funzioni per incrementare metriche
+// Metric update helpers
 export function incrementRequest(endpoint, statusCode) {
   metrics.requests.total++;
   if (metrics.requests.byEndpoint[endpoint] === undefined) {
@@ -68,7 +68,7 @@ export function incrementError(type = 'other') {
 
 export function recordResponseTime(duration) {
   metrics.responseTimes.push(duration);
-  // Mantieni solo gli ultimi 1000 tempi
+  // Keep only the latest 1000 samples
   if (metrics.responseTimes.length > 1000) {
     metrics.responseTimes.shift();
   }
@@ -93,7 +93,7 @@ export function setCacheStats(stats) {
   metrics.cacheStats = stats;
 }
 
-// Calcola statistiche sui tempi di risposta
+// Calculate response time stats
 function getResponseTimeStats() {
   if (metrics.responseTimes.length === 0) {
     return { avg: 0, min: 0, max: 0, p95: 0 };
@@ -109,7 +109,7 @@ function getResponseTimeStats() {
   return { avg: avg.toFixed(2), min, max, p95 };
 }
 
-// Ottieni tutte le metriche
+// Return all collected metrics
 export function getMetrics() {
   const uptime = Date.now() - metrics.startTime;
   const memoryUsage = process.memoryUsage();
@@ -155,7 +155,7 @@ export function getMetrics() {
   };
 }
 
-// Funzioni di utilità
+// Utility functions
 function formatUptime(ms) {
   const seconds = Math.floor(ms / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -176,7 +176,7 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
-// Middleware per tracciare richieste
+// Middleware for request tracking
 export function metricsMiddleware(req, res, next) {
   const start = Date.now();
   const endpoint = (() => {
@@ -187,12 +187,12 @@ export function metricsMiddleware(req, res, next) {
     }
   })();
 
-  // Override res.end per catturare la risposta
+  // Override res.end to capture the response
   const originalEnd = res.end;
   res.end = function(chunk, encoding) {
     const duration = Date.now() - start;
 
-    // Registra metriche
+    // Record metrics
     incrementRequest(endpoint, res.statusCode);
     recordResponseTime(duration);
 
@@ -201,7 +201,7 @@ export function metricsMiddleware(req, res, next) {
       incrementError(errorType);
     }
 
-    // Ripristina il metodo originale
+    // Restore the original method
     res.end = originalEnd;
     res.end(chunk, encoding);
   };
