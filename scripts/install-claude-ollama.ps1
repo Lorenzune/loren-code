@@ -10,6 +10,13 @@ $claudeSettingsPath = Join-Path $claudeDir "settings.json"
 $launcherSourcePath = Join-Path $repoRoot "scripts\\ClaudeWrapperLauncher.cs"
 $launcherExePath = Join-Path $repoRoot "scripts\\ClaudeWrapperLauncher.exe"
 $envPath = Join-Path $repoRoot ".env.local"
+$npmBinDir = Join-Path $appData "npm"
+$claudeCmdPath = Join-Path $npmBinDir "claude.cmd"
+$claudeShellPath = Join-Path $npmBinDir "claude"
+$claudePs1Path = Join-Path $npmBinDir "claude.ps1"
+$claudeCmdBackupPath = Join-Path $npmBinDir "claude.loren-backup.cmd"
+$claudeShellBackupPath = Join-Path $npmBinDir "claude.loren-backup"
+$claudePs1BackupPath = Join-Path $npmBinDir "claude.loren-backup.ps1"
 
 if (-not (Test-Path $envPath)) {
   throw ".env.local not found. Create it first with OLLAMA_API_KEYS."
@@ -17,6 +24,7 @@ if (-not (Test-Path $envPath)) {
 
 New-Item -ItemType Directory -Force -Path $workspaceSettingsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $claudeDir | Out-Null
+New-Item -ItemType Directory -Force -Path $npmBinDir | Out-Null
 
 function Read-JsonFile {
   param([string]$Path)
@@ -95,6 +103,17 @@ function Get-CSharpCompiler {
   }
 
   throw "C# compiler not found. Unable to generate the launcher .exe."
+}
+
+function Backup-IfNeeded {
+  param(
+    [string]$SourcePath,
+    [string]$BackupPath
+  )
+
+  if ((Test-Path $SourcePath) -and -not (Test-Path $BackupPath)) {
+    Move-Item -LiteralPath $SourcePath -Destination $BackupPath -Force
+  }
 }
 
 function Get-OllamaAvailableModels {
@@ -219,9 +238,33 @@ $claudeSettings["model"] = $defaultModel
 $claudeSettings["availableModels"] = $availableModels
 Write-JsonFile -Path $claudeSettingsPath -Data $claudeSettings
 
+Backup-IfNeeded -SourcePath $claudeCmdPath -BackupPath $claudeCmdBackupPath
+Backup-IfNeeded -SourcePath $claudeShellPath -BackupPath $claudeShellBackupPath
+Backup-IfNeeded -SourcePath $claudePs1Path -BackupPath $claudePs1BackupPath
+
+$cmdContent = @"
+@echo off
+"$launcherExePath" %*
+"@
+Set-Content -LiteralPath $claudeCmdPath -Value $cmdContent -Encoding ASCII
+
+$shellLauncherPath = ($launcherExePath -replace "\\", "/")
+$shellContent = @"
+#!/bin/sh
+"$shellLauncherPath" "$@"
+"@
+Set-Content -LiteralPath $claudeShellPath -Value $shellContent -Encoding ASCII
+
+$ps1Content = @"
+& "$launcherExePath" @args
+"@
+Set-Content -LiteralPath $claudePs1Path -Value $ps1Content -Encoding UTF8
+
 Write-Host "Installation completed."
 Write-Host "Claude launcher:" $launcherExePath
 Write-Host "VS Code user settings:" $workspaceSettingsPath
 Write-Host "Claude user settings:" $claudeSettingsPath
+Write-Host "Global Claude command:" $claudeCmdPath
 Write-Host ""
 Write-Host "Restart VS Code. Claude Code will use the bridge in any project."
+Write-Host "The global 'claude' command now routes through Loren."

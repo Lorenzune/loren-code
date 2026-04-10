@@ -7,6 +7,13 @@ $workspaceSettingsPath = Join-Path $appData "Code\\User\\settings.json"
 $claudeSettingsPath = Join-Path $userProfile ".claude\\settings.json"
 $bridgePidPath = Join-Path $repoRoot ".runtime\\bridge.pid"
 $launcherExePath = Join-Path $repoRoot "scripts\\ClaudeWrapperLauncher.exe"
+$npmBinDir = Join-Path $appData "npm"
+$claudeCmdPath = Join-Path $npmBinDir "claude.cmd"
+$claudeShellPath = Join-Path $npmBinDir "claude"
+$claudePs1Path = Join-Path $npmBinDir "claude.ps1"
+$claudeCmdBackupPath = Join-Path $npmBinDir "claude.loren-backup.cmd"
+$claudeShellBackupPath = Join-Path $npmBinDir "claude.loren-backup"
+$claudePs1BackupPath = Join-Path $npmBinDir "claude.loren-backup.ps1"
 
 function Read-JsonFile {
   param([string]$Path)
@@ -43,6 +50,20 @@ function Write-JsonFile {
   Set-Content -LiteralPath $Path -Value ($json + "`n") -Encoding UTF8
 }
 
+function Restore-BackupIfPresent {
+  param(
+    [string]$BackupPath,
+    [string]$TargetPath
+  )
+
+  if (Test-Path $BackupPath) {
+    if (Test-Path $TargetPath) {
+      Remove-Item -LiteralPath $TargetPath -Force -ErrorAction SilentlyContinue
+    }
+    Move-Item -LiteralPath $BackupPath -Destination $TargetPath -Force
+  }
+}
+
 if (Test-Path $workspaceSettingsPath) {
   $settings = Read-JsonFile -Path $workspaceSettingsPath
   [void]$settings.Remove("claudeCode.claudeProcessWrapper")
@@ -70,5 +91,9 @@ if (Test-Path $bridgePidPath) {
 if (Test-Path $launcherExePath) {
   Remove-Item -LiteralPath $launcherExePath -Force -ErrorAction SilentlyContinue
 }
+
+Restore-BackupIfPresent -BackupPath $claudeCmdBackupPath -TargetPath $claudeCmdPath
+Restore-BackupIfPresent -BackupPath $claudeShellBackupPath -TargetPath $claudeShellPath
+Restore-BackupIfPresent -BackupPath $claudePs1BackupPath -TargetPath $claudePs1Path
 
 Write-Host "Global configuration removed."

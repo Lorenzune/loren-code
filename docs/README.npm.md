@@ -66,6 +66,27 @@ The local bridge runs on:
 http://127.0.0.1:8788
 ```
 
+## Claude Code On Windows
+
+If you want the installed `claude` command to route through Loren instead of the official Claude CLI, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$(npm prefix -g)\node_modules\loren-code\scripts\install-claude-ollama.ps1"
+```
+
+That installer:
+
+- configures VS Code to use the local bridge
+- updates your user `.claude` settings
+- backs up existing global `claude` shims
+- installs Loren-backed `claude`, `claude.cmd`, and `claude.ps1` wrappers
+
+To restore the original `claude` command:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$(npm prefix -g)\node_modules\loren-code\scripts\uninstall-claude-ollama.ps1"
+```
+
 ## Troubleshooting
 
 ### `loren` not found

@@ -88,7 +88,7 @@ Loren includes Windows-oriented helper scripts for wiring Claude Code to the loc
 - `scripts/uninstall-claude-ollama.ps1`
 - `scripts/claude-wrapper.js`
 
-These are repository-level tools and part of the project setup, not the main npm CLI flow.
+These scripts can also take over the global `claude` command on Windows by backing up the existing `claude` shims and replacing them with Loren-backed wrappers.
 
 ## Project Structure
 
