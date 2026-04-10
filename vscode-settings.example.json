@@ -1,14 +1,18 @@
 {
   "claudeCode.disableLoginPrompt": true,
+  "claudeCode.claudeProcessWrapper": "C:\\path\\to\\loren-code\\scripts\\ClaudeWrapperLauncher.exe",
   "claudeCode.environmentVariables": [
     {
       "name": "ANTHROPIC_BASE_URL",
-      "value": "http://127.0.0.1:8787"
+      "value": "http://127.0.0.1:8788"
     },
     {
-      "name": "ANTHROPIC_AUTH_TOKEN",
+      "name": "ANTHROPIC_API_KEY",
       "value": "bridge-local"
+    },
+    {
+      "name": "CLAUDE_CODE_SKIP_AUTH_LOGIN",
+      "value": "1"
     }
   ]
 }
-

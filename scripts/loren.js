@@ -13,6 +13,8 @@ const runtimeDir = path.join(projectRoot, ".runtime");
 const pidFilePath = path.join(runtimeDir, "loren.pid");
 const logFilePath = path.join(runtimeDir, "bridge.log");
 const errorLogFilePath = path.join(runtimeDir, "bridge.err.log");
+const userHome = process.env.USERPROFILE || process.env.HOME || projectRoot;
+const claudeSettingsPath = path.join(userHome, ".claude", "settings.json");
 
 // Force working directory to project root for config loading
 process.chdir(projectRoot);
@@ -53,7 +55,7 @@ const COMMANDS = {
 
 function main() {
   const args = process.argv.slice(2);
-  const [command, subcommand, ...rest] = args;
+  const [command] = args;
 
   if (!command || command === "help" || command === "--help" || command === "-h") {
     printHelp();
@@ -78,7 +80,7 @@ function main() {
   }
 
   if (category && action && COMMANDS[category] && COMMANDS[category][action]) {
-    COMMANDS[category][action](rest);
+    COMMANDS[category][action](args.slice(1));
     return;
   }
 
@@ -194,9 +196,13 @@ function setModel(args) {
   const envVars = loadEnvFile(envFilePath);
   envVars.DEFAULT_MODEL_ALIAS = requestedModel;
   saveEnvFile(envFilePath, envVars);
+  syncClaudeSelectedModel(requestedModel);
 
   console.log(`\n✓ Default model set to: ${requestedModel}`);
   console.log("  New requests will use this model immediately.");
+  if (fs.existsSync(claudeSettingsPath)) {
+    console.log("  Claude Code settings were updated as well.");
+  }
   console.log("");
 }
 
@@ -467,6 +473,28 @@ function safeUnlink(filePath) {
   if (fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);
   }
+}
+
+function syncClaudeSelectedModel(model) {
+  const settingsDir = path.dirname(claudeSettingsPath);
+  fs.mkdirSync(settingsDir, { recursive: true });
+
+  let settings = {};
+  if (fs.existsSync(claudeSettingsPath)) {
+    try {
+      settings = JSON.parse(fs.readFileSync(claudeSettingsPath, "utf8").replace(/^\uFEFF/, ""));
+    } catch {
+      settings = {};
+    }
+  }
+
+  const availableModels = Array.isArray(settings.availableModels) ? settings.availableModels : [];
+  if (!availableModels.includes(model)) {
+    settings.availableModels = [model, ...availableModels];
+  }
+
+  settings.model = model;
+  fs.writeFileSync(claudeSettingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
 }
 
 // ============== HELP ==============

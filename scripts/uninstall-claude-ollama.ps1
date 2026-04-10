@@ -47,6 +47,7 @@ if (Test-Path $workspaceSettingsPath) {
   $settings = Read-JsonFile -Path $workspaceSettingsPath
   [void]$settings.Remove("claudeCode.claudeProcessWrapper")
   [void]$settings.Remove("claudeCode.disableLoginPrompt")
+  [void]$settings.Remove("claudeCode.environmentVariables")
   Write-JsonFile -Path $workspaceSettingsPath -Data $settings
 }
 

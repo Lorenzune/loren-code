@@ -163,8 +163,38 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path $launcherExePath)) {
 }
 
 $workspaceSettings = Read-JsonFile -Path $workspaceSettingsPath
+$bridgeHost = Get-EnvValue -Path $envPath -Name "BRIDGE_HOST"
+if (-not $bridgeHost) {
+  $bridgeHost = "127.0.0.1"
+}
+
+$bridgePort = Get-EnvValue -Path $envPath -Name "BRIDGE_PORT"
+if (-not $bridgePort) {
+  $bridgePort = "8788"
+}
+
+$bridgeBaseUrl = "http://${bridgeHost}:${bridgePort}"
+
 $workspaceSettings["claudeCode.claudeProcessWrapper"] = $launcherExePath
 $workspaceSettings["claudeCode.disableLoginPrompt"] = $true
+$workspaceSettings["claudeCode.environmentVariables"] = @(
+  @{
+    name = "ANTHROPIC_BASE_URL"
+    value = $bridgeBaseUrl
+  },
+  @{
+    name = "ANTHROPIC_API_KEY"
+    value = "bridge-local"
+  },
+  @{
+    name = "ANTHROPIC_AUTH_TOKEN"
+    value = ""
+  },
+  @{
+    name = "CLAUDE_CODE_SKIP_AUTH_LOGIN"
+    value = "1"
+  }
+)
 Write-JsonFile -Path $workspaceSettingsPath -Data $workspaceSettings
 
 $claudeSettings = Read-JsonFile -Path $claudeSettingsPath
