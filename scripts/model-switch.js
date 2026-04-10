@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, "..");
-const claudeSettingsPath = path.join(repoRoot, ".claude", "settings.json");
+const userHome = process.env.USERPROFILE || process.env.HOME;
+const claudeSettingsPath = path.join(userHome || path.resolve(__dirname, ".."), ".claude", "settings.json");
 
 function main() {
   const [command, ...rest] = process.argv.slice(2);
