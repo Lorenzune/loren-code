@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
+import process from "node:process";
 import { execFileSync, spawn } from "node:child_process";
+import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { loadConfig, loadEnvFile, saveEnvFile } from "../src/config.js";
 import { ensureEnvLocal, ensureRuntimeDir, getBridgeBaseUrl } from "../src/bootstrap.js";
@@ -18,18 +20,13 @@ const errorLogFilePath = path.join(runtimeDir, "bridge.err.log");
 const userHome = process.env.USERPROFILE || process.env.HOME || projectRoot;
 const claudeSettingsPath = path.join(userHome, ".claude", "settings.json");
 
-// Force working directory to project root for config loading
 process.chdir(projectRoot);
-const runtimePath = ensureRuntimeDir();
-const envStatus = ensureEnvLocal(projectRoot);
+ensureRuntimeDir();
+const envStatus = ensureEnvLocal(projectRoot, { logger: { warn() {} } });
 
-const ASCII_LOGO = `
-██╗      ██████╗ ██████╗ ███████╗███╗   ██╗     ██████╗ ██████╗ ██████╗ ███████╗
-██║     ██╔═══██╗██╔══██╗██╔════╝████╗  ██║    ██╔════╝██╔═══██╗██╔══██╗██╔════╝
-██║     ██║   ██║██████╔╝█████╗  ██╔██╗ ██║    ██║     ██║   ██║██║  ██║█████╗
-██║     ██║   ██║██╔══██╗██╔══╝  ██║╚██╗██║    ██║     ██║   ██║██║  ██║██╔══╝
-███████╗╚██████╔╝██║  ██║███████╗██║ ╚████║    ╚██████╗╚██████╔╝██████╔╝███████╗
-╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝     ╚═════╝ ╚═════╝ ╚═════╝ ╚══════
+const BANNER = `
+LOREN CODE
+Smarter bridge, fewer rituals.
 `;
 
 const COMMANDS = {
@@ -47,6 +44,7 @@ const COMMANDS = {
   },
   config: {
     show: showConfig,
+    paths: showPaths,
   },
   server: {
     start: startServer,
@@ -55,18 +53,25 @@ const COMMANDS = {
   },
 };
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   const [command] = args;
   const config = loadConfig();
 
-  if (!command || command === "help" || command === "--help" || command === "-h") {
-    printHelp();
-    maybePrintSetupHint(config);
-    process.exit(0);
+  if (!command) {
+    await runSetupWizard(config);
+    return;
   }
 
-  const [category, action] = command.split(":");
+  if (command === "help" || command === "--help" || command === "-h") {
+    printHelp();
+    return;
+  }
+
+  if (command === "setup") {
+    await runSetupWizard(config);
+    return;
+  }
 
   if (command === "start") {
     startServer();
@@ -83,24 +88,24 @@ function main() {
     return;
   }
 
+  const [category, action] = command.split(":");
   if (category && action && COMMANDS[category] && COMMANDS[category][action]) {
-    COMMANDS[category][action](args.slice(1));
+    await COMMANDS[category][action](args.slice(1));
     return;
   }
 
   console.error(`Unknown command: ${command}`);
-  printHelp();
+  console.log("");
+  console.log("Run `loren help` if the command goblin struck again.");
   process.exit(1);
 }
-
-// ============== MODEL COMMANDS ==============
 
 async function listModels() {
   const config = loadConfig();
 
   try {
     const response = await fetch(`${config.upstreamBaseUrl}/api/tags`, {
-      headers: { "accept": "application/json" },
+      headers: { accept: "application/json" },
     });
 
     if (!response.ok) {
@@ -110,7 +115,6 @@ async function listModels() {
     const data = await response.json();
     let models = Array.isArray(data.models) ? data.models : [];
 
-    // Sort by modified date (most recent first)
     models = models.sort((a, b) => {
       const dateA = a.modified_at ? new Date(a.modified_at).getTime() : 0;
       const dateB = b.modified_at ? new Date(b.modified_at).getTime() : 0;
@@ -127,9 +131,7 @@ async function listModels() {
       const size = formatSize(model.size);
       const modified = model.modified_at ? new Date(model.modified_at).toLocaleDateString() : "unknown";
       const marker = modelId === config.defaultModel ? "●" : "○";
-      console.log(
-        `${marker} ${modelId.padEnd(28)}${size.padStart(12)}${modified.padStart(12)}`
-      );
+      console.log(`${marker} ${modelId.padEnd(28)}${size.padStart(12)}${modified.padStart(12)}`);
     }
 
     console.log("");
@@ -143,21 +145,24 @@ async function listModels() {
 }
 
 function formatSize(bytes) {
-  if (!bytes) return "unknown";
+  if (!bytes) {
+    return "unknown";
+  }
+
   const gb = bytes / (1024 ** 3);
   return `${gb.toFixed(1)} GB`;
 }
 
 async function refreshModels() {
   const config = loadConfig();
-  const url = `http://${config.host}:${config.port}/v1/refresh`;
+  const url = `${getBridgeBaseUrl(config)}/v1/refresh`;
 
-  console.log(`Sending refresh request to ${url}...`);
+  console.log("Refreshing the model list...");
 
   try {
     const response = await fetch(url, {
       method: "POST",
-      headers: { "accept": "application/json" },
+      headers: { accept: "application/json" },
     });
 
     if (!response.ok) {
@@ -167,12 +172,11 @@ async function refreshModels() {
     const data = await response.json();
     const models = Array.isArray(data.data) ? data.data : [];
 
-    console.log("\n✓ Models refreshed successfully!");
-    console.log(`  Fetched ${models.length} model(s) from Ollama Cloud.`);
+    console.log(`\nDone. Fetched ${models.length} model(s).`);
     console.log("");
   } catch (error) {
     console.error(`Error refreshing models: ${error.message}`);
-    console.error("Make sure the server is running: loren start");
+    console.error("Tip: start the bridge first with `loren start`.");
     process.exit(1);
   }
 }
@@ -181,31 +185,27 @@ function setModel(args) {
   const requestedModel = args.join(" ").trim();
 
   if (!requestedModel) {
-    console.error("Error: Specify a model name.");
+    console.error("Please specify a model name.");
     console.error("Example: loren model:set qwen3.5:397b");
     process.exit(1);
   }
 
   const config = loadConfig();
-
-  // Check if it's a valid alias or add it as a new direct model
   const isValidAlias = Object.keys(config.aliases).includes(requestedModel);
 
   if (!isValidAlias) {
-    console.warn(`Warning: '${requestedModel}' is not a configured alias.`);
-    console.warn("It will be used as a direct model name.");
+    console.warn(`Using '${requestedModel}' as a direct model name.`);
   }
 
-  // Update .env.local with new DEFAULT_MODEL_ALIAS
   const envVars = loadEnvFile(envFilePath);
   envVars.DEFAULT_MODEL_ALIAS = requestedModel;
   saveEnvFile(envFilePath, envVars);
   syncClaudeSelectedModel(requestedModel);
 
-  console.log(`\n✓ Default model set to: ${requestedModel}`);
-  console.log("  New requests will use this model immediately.");
+  console.log(`\nDefault model set to ${requestedModel}.`);
+  console.log("Fresh requests will use it right away.");
   if (fs.existsSync(claudeSettingsPath)) {
-    console.log("  Claude Code settings were updated as well.");
+    console.log("Claude Code settings were updated too.");
   }
   console.log("");
 }
@@ -216,18 +216,16 @@ function showCurrentModel() {
   console.log("");
 }
 
-// ============== API KEY COMMANDS ==============
-
 function listKeys() {
   const config = loadConfig();
 
-  console.log("\nConfigured API Keys:");
+  console.log("\nConfigured API keys:");
   console.log("─".repeat(40));
 
   if (config.apiKeys.length === 0) {
-    console.log("  (none configured)");
+    console.log("  none yet");
   } else {
-    for (let i = 0; i < config.apiKeys.length; i++) {
+    for (let i = 0; i < config.apiKeys.length; i += 1) {
       const key = config.apiKeys[i];
       const masked = `${key.slice(0, 4)}...${key.slice(-4)}`;
       const marker = i === 0 ? "●" : "○";
@@ -236,27 +234,22 @@ function listKeys() {
   }
 
   console.log("");
-  console.log(`Total: ${config.apiKeys.length} key(s)`);
-  console.log("");
 }
 
 function addKey(args) {
   const newKey = args.join(" ").trim();
 
   if (!newKey) {
-    console.error("Error: Specify an API key.");
+    console.error("Please specify an API key.");
     console.error("Example: loren keys:add sk-your-key-here");
     process.exit(1);
   }
 
   const envVars = loadEnvFile(envFilePath);
-  const existingKeys = (envVars.OLLAMA_API_KEYS || "")
-    .split(/[,\r?\n]+/)
-    .map((k) => k.trim())
-    .filter(Boolean);
+  const existingKeys = splitKeyList(envVars.OLLAMA_API_KEYS);
 
   if (existingKeys.includes(newKey)) {
-    console.log("  Key already exists, skipping.");
+    console.log("That key is already there. Loren noticed before I did.");
     return;
   }
 
@@ -264,9 +257,7 @@ function addKey(args) {
   envVars.OLLAMA_API_KEYS = existingKeys.join(",");
   saveEnvFile(envFilePath, envVars);
 
-  console.log(`\n✓ API key added.`);
-  console.log(`  Total keys: ${existingKeys.length}`);
-  console.log("  New key will be used for subsequent requests.");
+  console.log(`\nKey added. Total keys: ${existingKeys.length}`);
   console.log("");
 }
 
@@ -274,75 +265,65 @@ function removeKey(args) {
   const indexOrKey = args.join(" ").trim();
 
   if (!indexOrKey) {
-    console.error("Error: Specify key index or the key itself.");
+    console.error("Please specify a key index or the full key.");
     console.error("Example: loren keys:remove 0");
-    console.error("         loren keys:remove sk-xxx...");
     process.exit(1);
   }
 
   const envVars = loadEnvFile(envFilePath);
-  let existingKeys = (envVars.OLLAMA_API_KEYS || "")
-    .split(/[,\r?\n]+/)
-    .map((k) => k.trim())
-    .filter(Boolean);
+  let existingKeys = splitKeyList(envVars.OLLAMA_API_KEYS);
 
   let keyToRemove;
-  const index = parseInt(indexOrKey, 10);
-
-  if (!isNaN(index) && index >= 0 && index < existingKeys.length) {
+  const index = Number.parseInt(indexOrKey, 10);
+  if (!Number.isNaN(index) && index >= 0 && index < existingKeys.length) {
     keyToRemove = existingKeys[index];
   } else {
-    keyToRemove = existingKeys.find((k) => k === indexOrKey);
+    keyToRemove = existingKeys.find((key) => key === indexOrKey);
   }
 
   if (!keyToRemove) {
-    console.error("Error: Key not found.");
+    console.error("Key not found.");
     process.exit(1);
   }
 
-  existingKeys = existingKeys.filter((k) => k !== keyToRemove);
+  existingKeys = existingKeys.filter((key) => key !== keyToRemove);
   envVars.OLLAMA_API_KEYS = existingKeys.join(",");
   saveEnvFile(envFilePath, envVars);
 
-  console.log(`\n✓ API key removed.`);
-  console.log(`  Remaining keys: ${existingKeys.length}`);
+  console.log(`\nKey removed. Remaining keys: ${existingKeys.length}`);
   console.log("");
 }
 
-function rotateKeys(args) {
+function rotateKeys() {
   const envVars = loadEnvFile(envFilePath);
-  let existingKeys = (envVars.OLLAMA_API_KEYS || "")
-    .split(/[,\r?\n]+/)
-    .map((k) => k.trim())
-    .filter(Boolean);
+  let existingKeys = splitKeyList(envVars.OLLAMA_API_KEYS);
 
   if (existingKeys.length < 2) {
-    console.log("Need at least 2 keys to rotate.");
+    console.log("You need at least two keys to rotate.");
     return;
   }
 
-  // Move first key to the end
   const [first, ...rest] = existingKeys;
   existingKeys = [...rest, first];
-
   envVars.OLLAMA_API_KEYS = existingKeys.join(",");
   saveEnvFile(envFilePath, envVars);
 
-  console.log("\n✓ API keys rotated.");
-  console.log("  First key moved to end of list.");
+  console.log("\nKeys rotated. The first one took a well-earned break.");
   console.log("");
 }
 
-// ============== CONFIG COMMANDS ==============
+function splitKeyList(raw = "") {
+  return raw
+    .split(/[,\r?\n]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
 
 function showConfig() {
   const config = loadConfig();
 
-  console.log("\nCurrent Configuration:");
+  console.log("\nCurrent configuration:");
   console.log("─".repeat(40));
-  console.log(`  Home:        ${lorenHome}`);
-  console.log(`  Env File:    ${envFilePath}`);
-  console.log(`  Runtime:     ${runtimePath}`);
   console.log(`  Host:        ${config.host}`);
   console.log(`  Port:        ${config.port}`);
   console.log(`  Upstream:    ${config.upstreamBaseUrl}`);
@@ -352,73 +333,70 @@ function showConfig() {
   console.log("");
 }
 
-// ============== SERVER COMMANDS ==============
+function showPaths() {
+  console.log("\nLoren paths:");
+  console.log("─".repeat(40));
+  console.log(`  Home:        ${lorenHome}`);
+  console.log(`  Config:      ${envFilePath}`);
+  console.log(`  Runtime:     ${runtimeDir}`);
+  console.log("");
+}
 
 function startServer() {
   const existingPid = readPidFile();
   if (existingPid && isProcessRunning(existingPid)) {
     const config = loadConfig();
-    console.log(`\nLoren server is already running (PID ${existingPid}).`);
-    console.log(`  URL: ${getBridgeBaseUrl(config)}`);
+    console.log("\nLoren is already running.");
+    console.log(`URL: ${getBridgeBaseUrl(config)}`);
     console.log("");
     return;
   }
 
-  if (!fs.existsSync(runtimeDir)) {
-    fs.mkdirSync(runtimeDir, { recursive: true });
-  }
+  fs.mkdirSync(runtimeDir, { recursive: true });
 
   const child = spawn(process.execPath, [path.join(projectRoot, "src", "server.js")], {
     cwd: projectRoot,
     detached: true,
-    stdio: [
-      "ignore",
-      fs.openSync(logFilePath, "a"),
-      fs.openSync(errorLogFilePath, "a"),
-    ],
+    stdio: ["ignore", fs.openSync(logFilePath, "a"), fs.openSync(errorLogFilePath, "a")],
     windowsHide: true,
   });
 
   child.unref();
-  const pid = child.pid;
-
-  fs.writeFileSync(pidFilePath, `${pid}\n`, "utf8");
+  fs.writeFileSync(pidFilePath, `${child.pid}\n`, "utf8");
 
   const config = loadConfig();
-  console.log(`\n✓ Loren server started (PID ${pid}).`);
-  console.log(`  URL: ${getBridgeBaseUrl(config)}`);
+  console.log("\nLoren is up and listening.");
+  console.log(`URL: ${getBridgeBaseUrl(config)}`);
   console.log("");
 }
 
 function stopServer() {
   const pid = readPidFile();
   if (!pid) {
-    console.log("\nLoren server is not running.");
+    console.log("\nLoren is not running.");
     console.log("");
     return;
   }
 
   if (!isProcessRunning(pid)) {
     safeUnlink(pidFilePath);
-    console.log(`\nRemoved stale PID file for process ${pid}.`);
+    console.log("\nCleaned up a stale PID file.");
     console.log("");
     return;
   }
 
   try {
     if (process.platform === "win32") {
-      execFileSync("taskkill.exe", ["/PID", `${pid}`, "/T", "/F"], {
-        stdio: "ignore",
-      });
+      execFileSync("taskkill.exe", ["/PID", `${pid}`, "/T", "/F"], { stdio: "ignore" });
     } else {
       process.kill(pid, "SIGINT");
     }
 
     safeUnlink(pidFilePath);
-    console.log(`\n✓ Loren server stopped (PID ${pid}).`);
+    console.log("\nLoren stopped cleanly.");
     console.log("");
   } catch (error) {
-    console.error(`Error stopping server: ${error.message}`);
+    console.error(`Error stopping Loren: ${error.message}`);
     process.exit(1);
   }
 }
@@ -428,15 +406,12 @@ function showServerStatus() {
   const pid = readPidFile();
   const running = pid ? isProcessRunning(pid) : false;
 
-  console.log("\nServer Status:");
+  console.log("\nServer status:");
   console.log("─".repeat(40));
   console.log(`  Running:     ${running ? "yes" : "no"}`);
   console.log(`  Host:        ${config.host}`);
   console.log(`  Port:        ${config.port}`);
   console.log(`  URL:         ${getBridgeBaseUrl(config)}`);
-  if (pid) {
-    console.log(`  PID:         ${pid}${running ? "" : " (stale)"}`);
-  }
   console.log("");
 }
 
@@ -453,15 +428,11 @@ function readPidFile() {
 function isProcessRunning(pid) {
   if (process.platform === "win32") {
     try {
-      const output = execFileSync("powershell.exe", [
-        "-NoProfile",
-        "-Command",
-        `Get-Process -Id ${pid} -ErrorAction Stop | Select-Object -ExpandProperty Id`,
-      ], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      }).trim();
-
+      const output = execFileSync(
+        "powershell.exe",
+        ["-NoProfile", "-Command", `Get-Process -Id ${pid} -ErrorAction Stop | Select-Object -ExpandProperty Id`],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+      ).trim();
       return output === `${pid}`;
     } catch {
       return false;
@@ -504,70 +475,134 @@ function syncClaudeSelectedModel(model) {
   fs.writeFileSync(claudeSettingsPath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
 }
 
-function maybePrintSetupHint(config) {
-  if (!envStatus.created && config.apiKeys.length > 0) {
+async function runSetupWizard(config) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    printHelp();
+    printQuickSetup(config);
     return;
   }
 
-  console.log("Setup:");
-  console.log(`  Loren home: ${lorenHome}`);
-  console.log(`  Config file: ${envFilePath}`);
+  if (config.apiKeys.length > 0) {
+    printWelcomeBack(config);
+    return;
+  }
 
+  printWizardIntro();
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  try {
+    const rawKeys = (await rl.question("Paste your Ollama API key(s), separated by commas: ")).trim();
+
+    if (rawKeys) {
+      const keys = splitKeyList(rawKeys);
+      const envVars = loadEnvFile(envFilePath);
+      envVars.OLLAMA_API_KEYS = keys.join(",");
+      saveEnvFile(envFilePath, envVars);
+      console.log(`\nNice. Loren is holding ${keys.length} key(s) and feeling organized.`);
+    } else {
+      console.log("\nNo keys yet. Loren will wait here and act casual about it.");
+    }
+
+    const startNow = (await rl.question("Start the bridge now? [Y/n] ")).trim().toLowerCase();
+    if (startNow === "" || startNow === "y" || startNow === "yes") {
+      startServer();
+    }
+
+    if (process.platform === "win32") {
+      const installClaude = (await rl.question("Install Claude Code integration too? [y/N] ")).trim().toLowerCase();
+      if (installClaude === "y" || installClaude === "yes") {
+        installClaudeIntegration();
+      } else {
+        console.log("\nNo problem. You can wire Claude in later.");
+      }
+    }
+
+    console.log("Setup complete. Fewer steps, fewer goblins.");
+    console.log("");
+  } finally {
+    rl.close();
+  }
+}
+
+function printWizardIntro() {
+  console.log(BANNER);
   if (envStatus.migrated) {
-    console.log("  Existing configuration was migrated automatically.");
+    console.log("Your previous settings were imported automatically.");
   } else if (envStatus.created) {
-    console.log("  A new config file was created automatically.");
+    console.log("A fresh config is ready.");
   }
-
-  if (config.apiKeys.length === 0) {
-    console.log("  Add OLLAMA_API_KEYS to finish setup.");
-  }
-
-  console.log("  Then run: loren start");
+  console.log("Let's get Loren ready in one quick pass.");
   console.log("");
 }
 
-// ============== HELP ==============
-
-function printHelp() {
-  console.log(ASCII_LOGO);
-  console.log(`
-LOREN CODE - Ollama Cloud Model Manager
-────────────────────────────────────────────────────
-
-MODEL COMMANDS:
-  loren model:list              Fetch & list models from Ollama Cloud
-  loren model:set <name>        Set default model (immediate effect)
-  loren model:current           Show current default model
-  loren model:refresh           Force refresh models cache
-
-KEY COMMANDS:
-  loren keys:list               List configured API keys
-  loren keys:add <key>          Add a new API key
-  loren keys:remove <idx|key>   Remove a key by index or value
-  loren keys:rotate             Rotate keys (move first to end)
-
-CONFIG COMMANDS:
-  loren config:show             Show current configuration
-
-SERVER COMMANDS:
-  loren start                   Start bridge server (port 8788)
-  loren stop                    Stop bridge server
-  loren status                  Show bridge server status
-
-EXAMPLES:
-  loren model:list
-  loren model:set gpt-oss:20b
-  loren model:refresh
-  loren keys:add sk-ollama-abc123...
-  loren keys:remove 0
-  loren config:show
-
-TIPS:
-  - Model changes take effect immediately for new requests
-  - Use model:refresh after changing model to update Claude Code's list
-  - Models are sorted by modification date (most recent first)
-`);
+function printWelcomeBack(config) {
+  console.log(BANNER);
+  console.log(`Welcome back. ${config.apiKeys.length} key(s) loaded.`);
+  console.log(`Current default model: ${config.defaultModel}`);
+  console.log("");
+  console.log("Useful commands:");
+  console.log("  loren start");
+  console.log("  loren model:list");
+  console.log("  loren config:show");
+  console.log("");
 }
 
-main();
+function printQuickSetup(config) {
+  if (config.apiKeys.length > 0) {
+    console.log("Run `loren start` to launch the bridge.");
+    console.log("");
+    return;
+  }
+
+  console.log("Quick start:");
+  console.log("  1. Run `loren` in an interactive terminal");
+  console.log("  2. Add your Ollama API key(s)");
+  console.log("  3. Start the bridge");
+  console.log("");
+}
+
+function installClaudeIntegration() {
+  const scriptPath = path.join(projectRoot, "scripts", "install-claude-ollama.ps1");
+
+  try {
+    execFileSync("powershell.exe", ["-ExecutionPolicy", "Bypass", "-File", scriptPath], {
+      stdio: "inherit",
+    });
+  } catch (error) {
+    console.error(`Couldn't install Claude integration automatically: ${error.message}`);
+  }
+}
+
+function printHelp() {
+  console.log(BANNER);
+  console.log("Commands:");
+  console.log("  loren setup                 Run the setup wizard");
+  console.log("  loren start                 Start the bridge");
+  console.log("  loren stop                  Stop the bridge");
+  console.log("  loren status                Show bridge status");
+  console.log("  loren model:list            List models");
+  console.log("  loren model:set <name>      Set the default model");
+  console.log("  loren model:current         Show the current model");
+  console.log("  loren model:refresh         Refresh cached models");
+  console.log("  loren keys:list             List API keys");
+  console.log("  loren keys:add <key>        Add an API key");
+  console.log("  loren keys:remove <value>   Remove an API key");
+  console.log("  loren keys:rotate           Rotate configured keys");
+  console.log("  loren config:show           Show current config");
+  console.log("  loren config:paths          Show Loren paths");
+  console.log("");
+  console.log("Examples:");
+  console.log("  loren");
+  console.log("  loren start");
+  console.log("  loren model:set gpt-oss:20b");
+  console.log("");
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});

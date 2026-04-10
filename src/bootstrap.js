@@ -21,18 +21,18 @@ export function ensureEnvLocal(projectRoot, options = {}) {
 
   if (fs.existsSync(legacyEnvPath) && legacyEnvPath !== envLocalPath) {
     fs.copyFileSync(legacyEnvPath, envLocalPath);
-    logger.warn?.(`Migrated existing config from ${legacyEnvPath} to ${envLocalPath}.`);
+    logger.warn?.("Existing Loren settings were migrated automatically.");
     return { created: true, migrated: true, path: envLocalPath };
   }
 
   if (!fs.existsSync(envExamplePath)) {
     fs.writeFileSync(envLocalPath, "OLLAMA_API_KEYS=\nBRIDGE_HOST=127.0.0.1\nBRIDGE_PORT=8788\n", "utf8");
-    logger.warn?.(`Created ${envLocalPath}. Add your Ollama API key(s) before starting the bridge.`);
+    logger.warn?.("A fresh Loren config was created. Add your Ollama API key(s) before starting the bridge.");
     return { created: true, path: envLocalPath };
   }
 
   fs.copyFileSync(envExamplePath, envLocalPath);
-  logger.warn?.(`Created ${envLocalPath} from .env.example. Add your real Ollama API key(s) before starting the bridge.`);
+  logger.warn?.("A fresh Loren config was created from the template. Add your real Ollama API key(s) before starting the bridge.");
   return { created: true, path: envLocalPath };
 }
 

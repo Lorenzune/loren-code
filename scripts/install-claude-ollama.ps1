@@ -285,12 +285,8 @@ $ps1Content = @"
 Set-Content -LiteralPath $claudePs1Path -Value $ps1Content -Encoding UTF8
 
 Write-Host "Installation completed."
-Write-Host "Loren home:" $lorenHome
-Write-Host "Claude launcher:" $launcherExePath
-Write-Host "VS Code user settings:" $workspaceSettingsPath
-Write-Host "Claude user settings:" $claudeSettingsPath
-Write-Host "Loren config:" $envPath
-Write-Host "Global Claude command:" $claudeCmdPath
 Write-Host ""
-Write-Host "Restart VS Code. Claude Code will use the bridge in any project."
-Write-Host "The global 'claude' command now routes through Loren."
+Write-Host "Claude Code is now wired to Loren."
+Write-Host "Restart VS Code and open a fresh chat."
+Write-Host "The global 'claude' command now goes through Loren too."
+Write-Host "Tiny goblins have been escorted away from the terminal."
