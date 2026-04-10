@@ -233,7 +233,17 @@ if ($availableModels.Count -eq 0) {
   throw "OLLAMA_MODEL_ALIASES does not contain any models"
 }
 
-$defaultModel = if ($aliases.ContainsKey("ollama-free-auto")) { "ollama-free-auto" } else { $availableModels[0] }
+$configuredDefaultModel = Get-EnvValue -Path $envPath -Name "DEFAULT_MODEL_ALIAS"
+if (
+  -not [string]::IsNullOrWhiteSpace($configuredDefaultModel) -and
+  $availableModels.Contains($configuredDefaultModel)
+) {
+  $defaultModel = $configuredDefaultModel
+} elseif ($aliases.ContainsKey("ollama-free-auto")) {
+  $defaultModel = "ollama-free-auto"
+} else {
+  $defaultModel = $availableModels[0]
+}
 $claudeSettings["model"] = $defaultModel
 $claudeSettings["availableModels"] = $availableModels
 Write-JsonFile -Path $claudeSettingsPath -Data $claudeSettings
