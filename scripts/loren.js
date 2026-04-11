@@ -226,33 +226,36 @@ class LorenTui {
   }
 
   render() {
-    const chunks = [];
-    chunks.push(CLEAR);
-    chunks.push(renderBanner());
+    const sections = [];
+    sections.push(renderBanner());
 
+    let footerItems = ["[S] Start/Stop", "[M] Models", "[K] Keys", "[W] Setup", "[C] Claude", "[R] Refresh", "[Q] Quit"];
     if (this.screen.startsWith("setup_")) {
-      chunks.push(renderSetupHeader(this.statusMessage, this.statusColor));
-      chunks.push(this.renderSetupBody());
-      chunks.push(renderFooter(["[Enter] Confirm", "[Esc] Quit"]));
+      sections.push(renderSetupHeader(this.statusMessage, this.statusColor));
+      sections.push(this.renderSetupBody());
+      footerItems = this.screen === "setup_platform"
+        ? ["[W] Windows", "[L] Linux", "[Esc] Quit"]
+        : ["[Enter] Confirm", "[Esc] Quit"];
     } else if (this.screen === "keys") {
-      chunks.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
-      chunks.push(this.renderKeysBody());
-      chunks.push(renderFooter(["[Up/Down] Select", "[A] Add", "[D] Remove", "[T] Rotate", "[Esc] Back", "[Q] Quit"]));
+      sections.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
+      sections.push(this.renderKeysBody());
+      footerItems = ["[Up/Down] Select", "[A] Add", "[D] Remove", "[T] Rotate", "[Esc] Back", "[Q] Quit"];
     } else if (this.screen === "keys_add") {
-      chunks.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
-      chunks.push(this.renderAddKeyBody());
-      chunks.push(renderFooter(["[Enter] Save key", "[Esc] Back"]));
+      sections.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
+      sections.push(this.renderAddKeyBody());
+      footerItems = ["[Enter] Save key", "[Esc] Back"];
     } else if (this.screen === "models") {
-      chunks.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
-      chunks.push(this.renderModelsBody());
-      chunks.push(renderFooter(["[Up/Down] Select", "[Enter] Set model", "[Esc] Back", "[R] Refresh", "[Q] Quit"]));
+      sections.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
+      sections.push(this.renderModelsBody());
+      footerItems = ["[Up/Down] Select", "[Enter] Set model", "[Esc] Back", "[R] Refresh", "[Q] Quit"];
     } else {
-      chunks.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
-      chunks.push(this.renderDashboardBody());
-      chunks.push(renderFooter(["[S] Start/Stop", "[M] Models", "[K] Keys", "[W] Setup", "[C] Claude", "[R] Refresh", "[Q] Quit"]));
+      sections.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
+      sections.push(this.renderDashboardBody());
     }
 
-    process.stdout.write(chunks.join("\n"));
+    const body = sections.join("\n");
+    const footer = renderFooter(footerItems);
+    process.stdout.write(renderScreen(body, footer));
   }
 
   renderDashboardBody() {
@@ -359,10 +362,10 @@ class LorenTui {
       return [
         box("Step 1 of 5 - Operating System", [
           "Choose the machine where Claude Code should be wired.",
-          color("Type windows or linux, then press Enter.", DIM),
+          color("Press W for Windows or L for Linux.", DIM),
         ]),
         "",
-        `${CYAN}> ${this.prompt || this.installTarget}${RESET}`,
+        `${CYAN}> ${formatInstallTargetChoice(this.installTarget)}${RESET}`,
       ].join("\n");
     }
 
@@ -596,6 +599,29 @@ class LorenTui {
   }
 
   async handleSetupKeypress(key) {
+    if (this.screen === "setup_platform") {
+      const name = (key.name || "").toLowerCase();
+      if (name === "escape") {
+        this.shouldExit = true;
+        return;
+      }
+      if (name === "w") {
+        saveInstallTarget("windows");
+        this.installTarget = "windows";
+        this.setStatus("Target system set to windows.", GREEN);
+        this.enterSetupKeys();
+        return;
+      }
+      if (name === "l") {
+        saveInstallTarget("linux");
+        this.installTarget = "linux";
+        this.setStatus("Target system set to linux.", GREEN);
+        this.enterSetupKeys();
+        return;
+      }
+      return;
+    }
+
     if (this.screen === "setup_models") {
       await this.handleSetupModelsKeypress(key);
       return;
@@ -648,21 +674,6 @@ class LorenTui {
   }
 
   async commitSetupPrompt() {
-    if (this.screen === "setup_platform") {
-      const target = normalizeInstallTarget(this.prompt || this.installTarget);
-      if (!target) {
-        this.setStatus("Please choose either windows or linux.", RED);
-        return;
-      }
-
-      saveInstallTarget(target);
-      this.installTarget = target;
-      this.prompt = "";
-      this.setStatus(`Target system set to ${target}.`, GREEN);
-      this.enterSetupKeys();
-      return;
-    }
-
     if (this.screen === "setup_keys") {
       const keys = splitKeyList(this.prompt);
       if (!keys.length) {
@@ -1266,6 +1277,15 @@ function renderFooter(items) {
   return `${DIM}${"-".repeat(78)}${RESET}\n${items.join(`${DIM}  *  ${RESET}`)}\n`;
 }
 
+function renderScreen(body, footer) {
+  const rows = Number.isInteger(process.stdout.rows) ? process.stdout.rows : 40;
+  const bodyLines = countRenderedLines(body);
+  const footerLines = countRenderedLines(footer);
+  const paddingLines = Math.max(0, rows - bodyLines - footerLines);
+  const padding = paddingLines > 0 ? `${"\n".repeat(paddingLines)}` : "";
+  return `${CLEAR}${body}${padding}\n${footer}`;
+}
+
 function box(title, lines) {
   const width = 74;
   const top = `+- ${title}${"-".repeat(Math.max(0, width - title.length - 3))}+`;
@@ -1291,6 +1311,10 @@ function stripAnsi(text) {
   return String(text).replace(/\x1b\[[0-9;]*m/g, "");
 }
 
+function countRenderedLines(text) {
+  return stripAnsi(text).split("\n").length;
+}
+
 function color(text, ansi) {
   return `${ansi}${text}${RESET}`;
 }
@@ -1302,6 +1326,10 @@ function centerText(text, width) {
   }
   const leftPadding = Math.floor((width - value.length) / 2);
   return `${" ".repeat(leftPadding)}${value}`;
+}
+
+function formatInstallTargetChoice(target) {
+  return target === "linux" ? "[L] Linux" : "[W] Windows";
 }
 
 function getDisplayName() {
