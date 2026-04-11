@@ -1,6 +1,6 @@
 {
   "name": "loren-code",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Terminal UI and local bridge for Ollama Cloud and Claude Code with model switching and API key rotation",
   "author": "lorenzune",
   "license": "MIT",
@@ -46,11 +46,14 @@
   },
   "files": [
     "scripts/ClaudeWrapperLauncher.cs",
+    "scripts/ClaudeWrapperLauncher.sh",
     "scripts/claude-wrapper.js",
     "scripts/install-claude-ollama.ps1",
+    "scripts/install-claude-ollama.sh",
     "scripts/loren.js",
     "scripts/postinstall.js",
     "scripts/uninstall-claude-ollama.ps1",
+    "scripts/uninstall-claude-ollama.sh",
     "src/*.js",
     ".env.example",
     "README.md"

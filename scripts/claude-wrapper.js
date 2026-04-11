@@ -104,8 +104,11 @@ function findClaudeExtensionExecutables() {
 
     const candidates = [
       path.join(extensionRoot, entry.name, "resources", "native-binary", "claude.exe"),
+      path.join(extensionRoot, entry.name, "resources", "native-binary", "claude"),
       path.join(extensionRoot, entry.name, "resources", "native-binaries", "win32-x64", "claude.exe"),
       path.join(extensionRoot, entry.name, "resources", "native-binaries", "win32-arm64", "claude.exe"),
+      path.join(extensionRoot, entry.name, "resources", "native-binaries", "linux-x64", "claude"),
+      path.join(extensionRoot, entry.name, "resources", "native-binaries", "linux-arm64", "claude"),
     ];
 
     for (const executable of candidates) {

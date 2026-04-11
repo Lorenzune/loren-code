@@ -56,6 +56,8 @@ const BANNER_COLORS = [
   "\x1b[38;2;205;193;255m",
 ];
 
+const SUPPORTED_INSTALL_TARGETS = ["windows", "linux"];
+
 const COMMANDS = {
   model: {
     list: listModels,
@@ -157,6 +159,7 @@ class LorenTui {
     this.statusMessage = "";
     this.statusColor = WHITE;
     this.config = loadConfig();
+    this.installTarget = getConfiguredInstallTarget();
     this.running = isServerRunning();
     this.shouldExit = false;
     this.setupRequired = forceSetup || this.config.apiKeys.length === 0;
@@ -214,7 +217,7 @@ class LorenTui {
 
   enterInitialScreen() {
     if (this.setupRequired) {
-      this.enterSetupKeys();
+      this.enterSetupPlatform();
       return;
     }
 
@@ -263,7 +266,7 @@ class LorenTui {
       box("Keys", [
         `Loaded   ${this.config.apiKeys.length}`,
         `Home     ${lorenHome}`,
-        `Claude   ${process.platform === "win32" ? "Available" : "Windows-only helper"}`,
+        `Claude   ${describeClaudeTarget(this.installTarget)}`,
       ]),
       "",
       box("Actions", [
@@ -352,9 +355,20 @@ class LorenTui {
   }
 
   renderSetupBody() {
+    if (this.screen === "setup_platform") {
+      return [
+        box("Step 1 of 5 - Operating System", [
+          "Choose the machine where Claude Code should be wired.",
+          color("Type windows or linux, then press Enter.", DIM),
+        ]),
+        "",
+        `${CYAN}> ${this.prompt || this.installTarget}${RESET}`,
+      ].join("\n");
+    }
+
     if (this.screen === "setup_keys") {
       return [
-        box("Step 1 of 4 - API Keys", [
+        box("Step 2 of 5 - API Keys", [
           "Paste one or more Ollama API keys, separated by commas.",
           color("Keys are required before Loren can continue.", DIM),
         ]),
@@ -365,9 +379,9 @@ class LorenTui {
 
     if (this.screen === "setup_claude") {
       return [
-        box("Step 2 of 4 - Claude Code", [
+        box("Step 3 of 5 - Claude Code", [
           "Do you want Loren to wire Claude Code automatically?",
-          color("Recommended on Windows.", DIM),
+          color(`Recommended for ${this.installTarget}.`, DIM),
         ]),
         "",
         `${CYAN}> ${this.prompt || "Y"}${RESET}`,
@@ -376,7 +390,7 @@ class LorenTui {
 
     if (this.screen === "setup_models") {
       return [
-        box("Step 3 of 4 - Default Model", [
+        box("Step 4 of 5 - Default Model", [
           "Choose the default model Loren should use.",
           color("Use Up/Down and press Enter.", DIM),
         ]),
@@ -387,7 +401,7 @@ class LorenTui {
 
     if (this.screen === "setup_start") {
       return [
-        box("Step 4 of 4 - Start Bridge", [
+        box("Step 5 of 5 - Start Bridge", [
           "Everything is ready.",
           color("Start the bridge now?", DIM),
         ]),
@@ -458,11 +472,11 @@ class LorenTui {
         this.enterKeysScreen();
         return;
       case "w":
-        this.enterSetupKeys();
+        this.enterSetupPlatform();
         return;
       case "c":
-        installClaudeIntegration({ quiet: true });
-        this.setStatus("Claude Code integration installed.", GREEN);
+        installClaudeIntegration({ quiet: true, targetPlatform: this.installTarget });
+        this.setStatus(`Claude Code integration installed for ${this.installTarget}.`, GREEN);
         return;
       case "r":
         this.refreshRuntime();
@@ -634,6 +648,21 @@ class LorenTui {
   }
 
   async commitSetupPrompt() {
+    if (this.screen === "setup_platform") {
+      const target = normalizeInstallTarget(this.prompt || this.installTarget);
+      if (!target) {
+        this.setStatus("Please choose either windows or linux.", RED);
+        return;
+      }
+
+      saveInstallTarget(target);
+      this.installTarget = target;
+      this.prompt = "";
+      this.setStatus(`Target system set to ${target}.`, GREEN);
+      this.enterSetupKeys();
+      return;
+    }
+
     if (this.screen === "setup_keys") {
       const keys = splitKeyList(this.prompt);
       if (!keys.length) {
@@ -646,19 +675,15 @@ class LorenTui {
       saveEnvFile(envFilePath, envVars);
       this.refreshRuntime();
       this.setStatus(`Saved ${keys.length} API key(s).`, GREEN);
-      if (process.platform === "win32") {
-        this.enterSetupClaude();
-      } else {
-        await this.enterSetupModels();
-      }
+      this.enterSetupClaude();
       return;
     }
 
     if (this.screen === "setup_claude") {
       const answer = (this.prompt || "y").trim().toLowerCase();
       if (answer === "" || answer === "y" || answer === "yes") {
-        installClaudeIntegration({ quiet: true });
-        this.setStatus("Claude Code integration installed.", GREEN);
+        installClaudeIntegration({ quiet: true, targetPlatform: this.installTarget });
+        this.setStatus(`Claude Code integration installed for ${this.installTarget}.`, GREEN);
       } else {
         this.setStatus("Skipping Claude Code integration for now.", YELLOW);
       }
@@ -682,10 +707,15 @@ class LorenTui {
     }
   }
 
+  enterSetupPlatform() {
+    this.screen = "setup_platform";
+    this.prompt = this.installTarget;
+    this.setStatus("Welcome. Let's choose your target system first.", CYAN);
+  }
+
   enterSetupKeys() {
     this.screen = "setup_keys";
     this.prompt = "";
-    this.setStatus("Welcome. Let's get Loren ready.", CYAN);
   }
 
   enterSetupClaude() {
@@ -729,6 +759,7 @@ class LorenTui {
 
   refreshRuntime() {
     this.config = loadConfig();
+    this.installTarget = getConfiguredInstallTarget();
     this.running = isServerRunning();
   }
 
@@ -1011,11 +1042,34 @@ function isProcessRunning(pid) {
 
 function installClaudeIntegration(options = {}) {
   const quiet = options.quiet === true;
-  const scriptPath = path.join(projectRoot, "scripts", "install-claude-ollama.ps1");
+  const targetPlatform = normalizeInstallTarget(options.targetPlatform) || getConfiguredInstallTarget();
+
   try {
-    execFileSync("powershell.exe", ["-ExecutionPolicy", "Bypass", "-File", scriptPath], {
-      stdio: quiet ? "ignore" : "inherit",
-    });
+    if (targetPlatform === "windows") {
+      if (process.platform !== "win32") {
+        throw new Error("Windows integration was selected, but this machine is not running Windows.");
+      }
+
+      const scriptPath = path.join(projectRoot, "scripts", "install-claude-ollama.ps1");
+      execFileSync("powershell.exe", ["-ExecutionPolicy", "Bypass", "-File", scriptPath], {
+        stdio: quiet ? "ignore" : "inherit",
+      });
+      return;
+    }
+
+    if (targetPlatform === "linux") {
+      if (process.platform === "win32") {
+        throw new Error("Linux integration was selected. Run Loren on the Linux machine you want to configure.");
+      }
+
+      const scriptPath = path.join(projectRoot, "scripts", "install-claude-ollama.sh");
+      execFileSync("sh", [scriptPath], {
+        stdio: quiet ? "ignore" : "inherit",
+      });
+      return;
+    }
+
+    throw new Error(`Unsupported install target: ${targetPlatform}`);
   } catch (error) {
     throw new Error(`Couldn't install Claude integration automatically: ${error.message}`);
   }
@@ -1053,6 +1107,26 @@ function splitKeyList(raw = "") {
 function getConfiguredKeys() {
   const envVars = loadEnvFile(envFilePath);
   return splitKeyList(envVars.OLLAMA_API_KEYS);
+}
+
+function getConfiguredInstallTarget() {
+  const envVars = loadEnvFile(envFilePath);
+  return normalizeInstallTarget(envVars.CLAUDE_INSTALL_TARGET) || getDefaultInstallTarget();
+}
+
+function getDefaultInstallTarget() {
+  return process.platform === "win32" ? "windows" : "linux";
+}
+
+function normalizeInstallTarget(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return SUPPORTED_INSTALL_TARGETS.includes(normalized) ? normalized : null;
+}
+
+function saveInstallTarget(target) {
+  const envVars = loadEnvFile(envFilePath);
+  envVars.CLAUDE_INSTALL_TARGET = target;
+  saveEnvFile(envFilePath, envVars);
 }
 
 function saveConfiguredKeys(keys) {
@@ -1166,6 +1240,10 @@ function renderDashboardHeader(config, running, statusMessage, statusColor) {
   }
   lines.push("");
   return lines.join("\n");
+}
+
+function describeClaudeTarget(target) {
+  return `${target} installer ready`;
 }
 
 function renderSetupHeader(statusMessage, statusColor) {

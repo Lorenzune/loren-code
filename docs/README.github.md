@@ -37,7 +37,7 @@ node scripts/loren.js
 - provides a terminal UI through `loren`
 - manages Ollama Cloud model aliases
 - stores config and runtime state under `%USERPROFILE%\.lorencode`
-- includes helper scripts for Claude Code integration on Windows
+- includes helper scripts for Claude Code integration on Windows and Linux
 
 ## API Keys And Rotation
 
@@ -104,13 +104,15 @@ If you installed the npm package globally, use `loren` instead of `node scripts/
 
 ## Claude Code Integration
 
-Loren includes Windows-oriented helper scripts for wiring Claude Code to the local bridge:
+Loren includes helper scripts for wiring Claude Code to the local bridge:
 
 - `scripts/install-claude-ollama.ps1`
+- `scripts/install-claude-ollama.sh`
 - `scripts/uninstall-claude-ollama.ps1`
+- `scripts/uninstall-claude-ollama.sh`
 - `scripts/claude-wrapper.js`
 
-These scripts can also take over the global `claude` command on Windows by backing up the existing `claude` shims and replacing them with Loren-backed wrappers.
+These scripts can also take over the global `claude` command by backing up the existing shim or script and replacing it with a Loren-backed wrapper.
 
 ## Project Structure
 
