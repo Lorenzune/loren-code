@@ -25,22 +25,28 @@ process.chdir(projectRoot);
 ensureRuntimeDir();
 const envStatus = ensureEnvLocal(projectRoot, { logger: { warn() {} } });
 
-const ASCII_BANNER = `
-██╗      ██████╗ ██████╗ ███████╗███╗   ██╗     ██████╗ ██████╗ ██████╗ ███████╗
-██║     ██╔═══██╗██╔══██╗██╔════╝████╗  ██║    ██╔════╝██╔═══██╗██╔══██╗██╔════╝
-██║     ██║   ██║██████╔╝█████╗  ██╔██╗ ██║    ██║     ██║   ██║██║  ██║█████╗
-██║     ██║   ██║██╔══██╗██╔══╝  ██║╚██╗██║    ██║     ██║   ██║██║  ██║██╔══╝
-███████╗╚██████╔╝██║  ██║███████╗██║ ╚████║    ╚██████╗╚██████╔╝██████╔╝███████╗
-╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝     ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
-`;
-
-const BANNER = `${ASCII_BANNER}
-LOREN CODE
-Smarter bridge, fewer rituals.
-`;
+const ASCII_BANNER_LINES = [
+  "██╗      ██████╗ ██████╗ ███████╗███╗   ██╗     ██████╗ ██████╗ ██████╗ ███████╗",
+  "██║     ██╔═══██╗██╔══██╗██╔════╝████╗  ██║    ██╔════╝██╔═══██╗██╔══██╗██╔════╝",
+  "██║     ██║   ██║██████╔╝█████╗  ██╔██╗ ██║    ██║     ██║   ██║██║  ██║█████╗",
+  "██║     ██║   ██║██╔══██╗██╔══╝  ██║╚██╗██║    ██║     ██║   ██║██║  ██║██╔══╝",
+  "███████╗╚██████╔╝██║  ██║███████╗██║ ╚████║    ╚██████╗╚██████╔╝██████╔╝███████╗",
+  "╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝     ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝",
+];
 const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
+const RED = "\x1b[31m";
+const CYAN = "\x1b[36m";
+const MAGENTA = "\x1b[35m";
 const RESET = "\x1b[0m";
+const BANNER_COLORS = [
+  "\x1b[38;2;198;218;255m",
+  "\x1b[38;2;190;212;255m",
+  "\x1b[38;2;181;206;255m",
+  "\x1b[38;2;188;201;255m",
+  "\x1b[38;2;196;197;255m",
+  "\x1b[38;2;205;193;255m",
+];
 
 const COMMANDS = {
   model: {
@@ -114,25 +120,8 @@ async function main() {
 }
 
 async function listModels() {
-  const config = loadConfig();
-
   try {
-    const response = await fetch(`${config.upstreamBaseUrl}/api/tags`, {
-      headers: { accept: "application/json" },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    let models = Array.isArray(data.models) ? data.models : [];
-
-    models = models.sort((a, b) => {
-      const dateA = a.modified_at ? new Date(a.modified_at).getTime() : 0;
-      const dateB = b.modified_at ? new Date(b.modified_at).getTime() : 0;
-      return dateB - dateA;
-    });
+    const { config, models } = await fetchAvailableModels();
 
     console.log("\nAvailable models from Ollama Cloud:");
     console.log("─".repeat(70));
@@ -215,12 +204,7 @@ function setModel(args) {
   saveEnvFile(envFilePath, envVars);
   syncClaudeSelectedModel(requestedModel);
 
-  console.log(`\nDefault model set to ${requestedModel}.`);
-  console.log("Fresh requests will use it right away.");
-  if (fs.existsSync(claudeSettingsPath)) {
-    console.log("Claude Code settings were updated too.");
-  }
-  console.log("");
+  return requestedModel;
 }
 
 function showCurrentModel() {
@@ -521,7 +505,7 @@ async function runSetupWizard(config) {
     console.log("");
 
     if (process.platform === "win32") {
-      const installClaude = (await rl.question("Install Claude Code integration too? [Y/n] ")).trim().toLowerCase();
+      const installClaude = (await askQuestion(rl, "Install Claude Code integration too? [Y/n] ")).trim().toLowerCase();
       if (installClaude === "" || installClaude === "y" || installClaude === "yes") {
         installClaudeIntegration();
         console.log(`${GREEN}✓ Claude Code integration installed.${RESET}`);
@@ -531,14 +515,16 @@ async function runSetupWizard(config) {
       }
     }
 
-    const startNow = (await rl.question("Start the bridge now? [Y/n] ")).trim().toLowerCase();
+    await promptForModelSelection(rl);
+
+    const startNow = (await askQuestion(rl, "Start the bridge now? [Y/n] ")).trim().toLowerCase();
     if (startNow === "" || startNow === "y" || startNow === "yes") {
       startServer({ quiet: true });
       console.log(`${GREEN}✓ Bridge started.${RESET}`);
       console.log("");
     }
 
-    console.log("Setup complete. Fewer steps, fewer goblins.");
+    console.log(`${GREEN}Setup complete. Fewer steps, fewer goblins.${RESET}`);
     console.log("");
   } finally {
     rl.close();
@@ -546,21 +532,20 @@ async function runSetupWizard(config) {
 }
 
 function printWizardIntro() {
-  console.log(BANNER);
+  printBanner();
   if (envStatus.migrated) {
-    console.log("Your previous settings were imported automatically.");
+    console.log(`${MAGENTA}Your previous settings were imported automatically.${RESET}`);
   } else if (envStatus.created) {
-    console.log("A fresh config is ready.");
+    console.log(`${GREEN}A fresh config is ready.${RESET}`);
   }
-  console.log(`Welcome${displayName ? `, ${displayName}` : ""}.`);
+  console.log(`${CYAN}Welcome${displayName ? `, ${displayName}` : ""}.${RESET}`);
   console.log(`${YELLOW}Run \`loren\` in an interactive terminal to finish setup.${RESET}`);
-  console.log("Let's get Loren ready in one quick pass.");
+  console.log(`${GREEN}Let's get Loren ready in one quick pass.${RESET}`);
   console.log("");
-  printCommandSummary();
 }
 
 function printWelcomeBack(config) {
-  console.log(BANNER);
+  printBanner();
   console.log(`Welcome back${displayName ? `, ${displayName}` : ""}.`);
   console.log(`${config.apiKeys.length} key(s) loaded.`);
   console.log(`Current default model: ${config.defaultModel}`);
@@ -575,7 +560,7 @@ function printQuickSetup(config) {
     return;
   }
 
-  console.log(BANNER);
+  printBanner();
   console.log(`Welcome${displayName ? `, ${displayName}` : ""}.`);
   console.log(`${YELLOW}Run \`loren\` in an interactive terminal to finish setup.${RESET}`);
   console.log("");
@@ -601,20 +586,88 @@ function installClaudeIntegration() {
 
 async function promptForApiKeys(rl) {
   while (true) {
-    const rawKeys = (await rl.question("Paste your Ollama API key(s), separated by commas: ")).trim();
+    const rawKeys = (await askQuestion(rl, "Paste your Ollama API key(s), separated by commas: ")).trim();
     const keys = splitKeyList(rawKeys);
 
     if (keys.length > 0) {
       return keys;
     }
 
-    console.log("At least one API key is required to continue.");
+    console.log(`${RED}At least one API key is required to continue.${RESET}`);
     console.log("");
   }
 }
 
+async function promptForModelSelection(rl) {
+  try {
+    const { models } = await fetchAvailableModels();
+
+    console.log("Available models:");
+    console.log("─".repeat(70));
+    for (const model of models) {
+      const modelId = model.model || model.name;
+      const size = formatSize(model.size);
+      const modified = model.modified_at ? new Date(model.modified_at).toLocaleDateString() : "unknown";
+      console.log(`${modelId.padEnd(30)}${size.padStart(12)}${modified.padStart(12)}`);
+    }
+    console.log("");
+
+    while (true) {
+      const requestedModel = (await askQuestion(rl, "Choose the default model: ")).trim();
+      const match = models.find((model) => (model.model || model.name) === requestedModel);
+
+      if (!requestedModel) {
+        console.log(`${RED}Please choose a model from the list above.${RESET}`);
+        console.log("");
+        continue;
+      }
+
+      if (!match) {
+        console.log(`${RED}That model is not in the current list.${RESET}`);
+        console.log("");
+        continue;
+      }
+
+      const model = setModel([requestedModel]);
+      console.log(`${GREEN}✓ Default model set to ${model}.${RESET}`);
+      console.log("");
+      return;
+    }
+  } catch (error) {
+    console.log(`${RED}Couldn't load models right now: ${error.message}${RESET}`);
+    console.log(`${RED}Please fix your keys and run \`loren model:list\` after setup.${RESET}`);
+    console.log("");
+    throw error;
+  }
+}
+
+async function fetchAvailableModels() {
+  const config = loadConfig();
+  const response = await fetch(`${config.upstreamBaseUrl}/api/tags`, {
+    headers: { accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  let models = Array.isArray(data.models) ? data.models : [];
+  models = models.sort((a, b) => {
+    const dateA = a.modified_at ? new Date(a.modified_at).getTime() : 0;
+    const dateB = b.modified_at ? new Date(b.modified_at).getTime() : 0;
+    return dateB - dateA;
+  });
+
+  return { config, models };
+}
+
+function askQuestion(rl, prompt) {
+  return rl.question(`${CYAN}${prompt}${RESET}`);
+}
+
 function printHelp() {
-  console.log(BANNER);
+  printBanner();
   printCommandSummary();
 }
 
@@ -650,6 +703,18 @@ function getDisplayName() {
 
   const baseName = path.basename(userHome || "").trim();
   return baseName || "";
+}
+
+function printBanner() {
+  const coloredBanner = ASCII_BANNER_LINES
+    .map((line, index) => `${BANNER_COLORS[index] || ""}${line}${RESET}`)
+    .join("\n");
+
+  console.log(coloredBanner);
+  console.log("");
+  console.log(`${CYAN}LOREN CODE${RESET}`);
+  console.log("Smarter bridge, fewer rituals.");
+  console.log("");
 }
 
 main().catch((error) => {
