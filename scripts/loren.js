@@ -146,49 +146,11 @@ async function launchTui(options = {}) {
   await ui.run();
 }
 
-async function listModels() {
-  try {
-    const { config, models } = await fetchAvailableModels();
-
-    console.log("\nAvailable models from Ollama Cloud:");
-    console.log("─".repeat(70));
-    console.log(`${pad("MODEL", 30)}${pad("SIZE", 12)}MODIFIED`);
-    console.log("─".repeat(70));
-
-    for (const model of models) {
-      const modelId = model.model || model.name;
-      const size = formatSize(model.size);
-      const modified = model.modified_at ? new Date(model.modified_at).toLocaleDateString() : "unknown";
-      const marker = modelId === config.defaultModel ? "●" : "○";
-      console.log(`${marker} ${pad(modelId, 28)}${pad(size, 12)}${modified}`);
-    }
-
-    console.log("");
-    console.log(`Total: ${models.length} model(s)`);
-    console.log(`Current default: ${config.defaultModel}`);
-    console.log("");
-  } catch (error) {
-    console.error(`Error fetching models: ${error.message}`);
-    process.exit(1);
-  }
-}
-
-async function refreshModels() {
-  try {
-    const { models } = await fetchAvailableModels();
-    console.log(`\nDone. Fetched ${models.length} model(s).`);
-    console.log("");
-  } catch (error) {
-    console.error(`Error refreshing models: ${error.message}`);
-    process.exit(1);
-  }
-}
-
 class LorenTui {
   constructor({ forceSetup }) {
     this.forceSetup = forceSetup;
     this.screen = "dashboard";
-    this.prompt = null;
+    this.prompt = "";
     this.models = [];
     this.selectedModelIndex = 0;
     this.statusMessage = "";
@@ -202,30 +164,38 @@ class LorenTui {
   async run() {
     readline.emitKeypressEvents(process.stdin);
     process.stdin.setRawMode(true);
+    process.stdin.resume();
     process.stdout.write(HIDE_CURSOR);
 
     const cleanup = () => {
       process.stdout.write(`${SHOW_CURSOR}${RESET}`);
-      if (process.stdin.isRaw) {
-        process.stdin.setRawMode(false);
-      }
+      try {
+        if (process.stdin.isRaw) {
+          process.stdin.setRawMode(false);
+        }
+      } catch {}
       process.stdin.removeAllListeners("keypress");
+    };
+
+    const failAndExit = (error) => {
+      cleanup();
+      process.stdout.write("\n");
+      console.error(error instanceof Error ? error.message : String(error));
+      this.shouldExit = true;
     };
 
     process.stdin.on("keypress", async (_str, key) => {
       try {
         await this.handleKeypress(key);
+        if (this.shouldExit) {
+          cleanup();
+          process.stdout.write("\n");
+          return;
+        }
+        this.render();
       } catch (error) {
-        this.setStatus(error.message || String(error), RED);
+        failAndExit(error);
       }
-
-      if (this.shouldExit) {
-        cleanup();
-        process.stdout.write("\n");
-        return;
-      }
-
-      this.render();
     });
 
     this.enterInitialScreen();
@@ -243,7 +213,7 @@ class LorenTui {
 
   enterInitialScreen() {
     if (this.setupRequired) {
-      this.enterSetupKeyPrompt();
+      this.enterSetupKeys();
       return;
     }
 
@@ -252,65 +222,48 @@ class LorenTui {
   }
 
   render() {
-    const sections = [];
-    sections.push(CLEAR);
-    sections.push(renderBanner());
+    const chunks = [];
+    chunks.push(CLEAR);
+    chunks.push(renderBanner());
 
-    if (this.screen.startsWith("setup")) {
-      sections.push(renderSetupHeader(this.config, this.statusMessage, this.statusColor));
-      sections.push(this.renderSetupBody());
-      sections.push(renderFooter([
-        "[Enter] Confirm",
-        "[Tab] Next",
-        "[Esc] Quit",
-      ]));
+    if (this.screen.startsWith("setup_")) {
+      chunks.push(renderSetupHeader(this.statusMessage, this.statusColor));
+      chunks.push(this.renderSetupBody());
+      chunks.push(renderFooter(["[Enter] Confirm", "[Esc] Quit"]));
     } else if (this.screen === "models") {
-      sections.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
-      sections.push(this.renderModelsBody());
-      sections.push(renderFooter([
-        "[↑ ↓] Select",
-        "[Enter] Set model",
-        "[Esc] Back",
-        "[R] Refresh",
-        "[Q] Quit",
-      ]));
+      chunks.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
+      chunks.push(this.renderModelsBody());
+      chunks.push(renderFooter(["[Up/Down] Select", "[Enter] Set model", "[Esc] Back", "[R] Refresh", "[Q] Quit"]));
     } else {
-      sections.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
-      sections.push(this.renderDashboardBody());
-      sections.push(renderFooter([
-        "[S] Start/Stop",
-        "[M] Models",
-        "[K] Setup",
-        "[C] Claude",
-        "[R] Refresh",
-        "[Q] Quit",
-      ]));
+      chunks.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
+      chunks.push(this.renderDashboardBody());
+      chunks.push(renderFooter(["[S] Start/Stop", "[M] Models", "[K] Setup", "[C] Claude", "[R] Refresh", "[Q] Quit"]));
     }
 
-    process.stdout.write(sections.join("\n"));
+    process.stdout.write(chunks.join("\n"));
   }
 
   renderDashboardBody() {
-    const lines = [];
-    lines.push(box("Bridge", [
-      `Status   ${this.running ? `${GREEN}Running${RESET}` : `${YELLOW}Stopped${RESET}`}`,
-      `URL      ${getBridgeBaseUrl(this.config)}`,
-      `Model    ${this.config.defaultModel}`,
-    ]));
-    lines.push("");
-    lines.push(box("Keys", [
-      `Loaded   ${this.config.apiKeys.length}`,
-      `Home     ${lorenHome}`,
-      `Claude   ${process.platform === "win32" ? "Available" : "Windows-only helper"}`,
-    ]));
-    lines.push("");
-    lines.push(box("Actions", [
-      "Press S to start or stop the bridge",
-      "Press M to browse models and change the default",
-      "Press K to reopen setup",
-      "Press C to install Claude Code integration",
-    ]));
-    return lines.join("\n");
+    return [
+      box("Bridge", [
+        `Status   ${this.running ? color("Running", GREEN) : color("Stopped", YELLOW)}`,
+        `URL      ${getBridgeBaseUrl(this.config)}`,
+        `Model    ${this.config.defaultModel}`,
+      ]),
+      "",
+      box("Keys", [
+        `Loaded   ${this.config.apiKeys.length}`,
+        `Home     ${lorenHome}`,
+        `Claude   ${process.platform === "win32" ? "Available" : "Windows-only helper"}`,
+      ]),
+      "",
+      box("Actions", [
+        "Press S to start or stop the bridge",
+        "Press M to browse models and change the default",
+        "Press K to reopen setup",
+        "Press C to install Claude Code integration",
+      ]),
+    ].join("\n");
   }
 
   renderModelsBody() {
@@ -321,56 +274,59 @@ class LorenTui {
     ]));
     lines.push("");
 
-    if (this.models.length === 0) {
+    if (!this.models.length) {
       lines.push("No models loaded yet. Press R to refresh.");
       return lines.join("\n");
     }
 
     lines.push("Available models:");
-    lines.push("─".repeat(74));
+    lines.push("-".repeat(74));
     lines.push(`  ${pad("MODEL", 34)}${pad("SIZE", 12)}MODIFIED`);
-    lines.push("─".repeat(74));
-    this.models.forEach((model, index) => {
+    lines.push("-".repeat(74));
+
+    for (let index = 0; index < this.models.length; index += 1) {
+      const model = this.models[index];
       const modelId = model.model || model.name;
       const selected = index === this.selectedModelIndex;
       const active = modelId === this.config.defaultModel;
-      const prefix = selected ? `${CYAN}›${RESET}` : " ";
-      const marker = active ? `${GREEN}●${RESET}` : "○";
+      const prefix = selected ? color(">", CYAN) : " ";
+      const marker = active ? color("*", GREEN) : "o";
       const size = formatSize(model.size);
       const modified = model.modified_at ? new Date(model.modified_at).toLocaleDateString() : "unknown";
       lines.push(`${prefix} ${marker} ${pad(modelId, 30)}${pad(size, 12)}${modified}`);
-    });
+    }
+
     return lines.join("\n");
   }
 
   renderSetupBody() {
     if (this.screen === "setup_keys") {
       return [
-        box("Step 1 of 4 · API Keys", [
+        box("Step 1 of 4 - API Keys", [
           "Paste one or more Ollama API keys, separated by commas.",
-          `${DIM}Keys are required before Loren can continue.${RESET}`,
+          color("Keys are required before Loren can continue.", DIM),
         ]),
         "",
-        `${CYAN}> ${this.prompt?.buffer || ""}${RESET}`,
+        `${CYAN}> ${this.prompt}${RESET}`,
       ].join("\n");
     }
 
     if (this.screen === "setup_claude") {
       return [
-        box("Step 2 of 4 · Claude Code", [
+        box("Step 2 of 4 - Claude Code", [
           "Do you want Loren to wire Claude Code automatically?",
-          `${DIM}Recommended on Windows.${RESET}`,
+          color("Recommended on Windows.", DIM),
         ]),
         "",
-        `${CYAN}> ${this.prompt?.buffer || "Y"}${RESET}`,
+        `${CYAN}> ${this.prompt || "Y"}${RESET}`,
       ].join("\n");
     }
 
     if (this.screen === "setup_models") {
       return [
-        box("Step 3 of 4 · Default Model", [
+        box("Step 3 of 4 - Default Model", [
           "Choose the default model Loren should use.",
-          `${DIM}Use the arrow keys and press Enter.${RESET}`,
+          color("Use Up/Down and press Enter.", DIM),
         ]),
         "",
         this.renderModelsBody(),
@@ -379,12 +335,12 @@ class LorenTui {
 
     if (this.screen === "setup_start") {
       return [
-        box("Step 4 of 4 · Start Bridge", [
+        box("Step 4 of 4 - Start Bridge", [
           "Everything is ready.",
-          `${DIM}Start the bridge now?${RESET}`,
+          color("Start the bridge now?", DIM),
         ]),
         "",
-        `${CYAN}> ${this.prompt?.buffer || "Y"}${RESET}`,
+        `${CYAN}> ${this.prompt || "Y"}${RESET}`,
       ].join("\n");
     }
 
@@ -401,7 +357,7 @@ class LorenTui {
       return;
     }
 
-    if (this.screen.startsWith("setup")) {
+    if (this.screen.startsWith("setup_")) {
       await this.handleSetupKeypress(key);
       return;
     }
@@ -415,7 +371,7 @@ class LorenTui {
   }
 
   async handleDashboardKeypress(key) {
-    switch (key.name) {
+    switch ((key.name || "").toLowerCase()) {
       case "q":
       case "escape":
         this.shouldExit = true;
@@ -423,19 +379,21 @@ class LorenTui {
       case "s":
         if (this.running) {
           stopServer();
+          this.running = false;
           this.setStatus("Bridge stopped.", GREEN);
         } else {
           startServer({ quiet: true });
+          this.running = true;
           this.setStatus("Bridge started.", GREEN);
         }
-        this.refreshRuntime();
+        this.config = loadConfig();
         return;
       case "m":
         await this.loadModels();
         this.screen = "models";
         return;
       case "k":
-        this.beginSetup();
+        this.enterSetupKeys();
         return;
       case "c":
         installClaudeIntegration({ quiet: true });
@@ -451,7 +409,7 @@ class LorenTui {
   }
 
   async handleModelsKeypress(key) {
-    switch (key.name) {
+    switch ((key.name || "").toLowerCase()) {
       case "escape":
       case "q":
         this.screen = "dashboard";
@@ -467,13 +425,12 @@ class LorenTui {
         }
         return;
       case "return":
-        if (!this.models.length) {
-          return;
+        if (this.models.length) {
+          this.applySelectedModel();
         }
-        this.applySelectedModel();
         return;
       case "r":
-        await this.loadModels(true);
+        await this.loadModels();
         return;
       default:
         return;
@@ -486,28 +443,28 @@ class LorenTui {
       return;
     }
 
-    if (key.name === "escape") {
+    if ((key.name || "").toLowerCase() === "escape") {
       this.shouldExit = true;
       return;
     }
 
-    if (key.name === "backspace") {
-      this.prompt.buffer = this.prompt.buffer.slice(0, -1);
+    if ((key.name || "").toLowerCase() === "backspace") {
+      this.prompt = this.prompt.slice(0, -1);
       return;
     }
 
-    if (key.name === "return") {
+    if ((key.name || "").toLowerCase() === "return") {
       await this.commitSetupPrompt();
       return;
     }
 
     if (key.sequence && !key.ctrl && !key.meta) {
-      this.prompt.buffer += key.sequence;
+      this.prompt += key.sequence;
     }
   }
 
   async handleSetupModelsKeypress(key) {
-    switch (key.name) {
+    switch ((key.name || "").toLowerCase()) {
       case "escape":
         this.shouldExit = true;
         return;
@@ -522,8 +479,10 @@ class LorenTui {
         }
         return;
       case "return":
-        this.applySelectedModel();
-        this.enterSetupStartPrompt();
+        if (this.models.length) {
+          this.applySelectedModel();
+          this.enterSetupStart();
+        }
         return;
       default:
         return;
@@ -532,7 +491,7 @@ class LorenTui {
 
   async commitSetupPrompt() {
     if (this.screen === "setup_keys") {
-      const keys = splitKeyList(this.prompt.buffer);
+      const keys = splitKeyList(this.prompt);
       if (!keys.length) {
         this.setStatus("At least one API key is required to continue.", RED);
         return;
@@ -542,9 +501,9 @@ class LorenTui {
       envVars.OLLAMA_API_KEYS = keys.join(",");
       saveEnvFile(envFilePath, envVars);
       this.refreshRuntime();
-      this.setStatus(`✓ Saved ${keys.length} API key(s).`, GREEN);
+      this.setStatus(`Saved ${keys.length} API key(s).`, GREEN);
       if (process.platform === "win32") {
-        this.enterSetupClaudePrompt();
+        this.enterSetupClaude();
       } else {
         await this.enterSetupModels();
       }
@@ -552,10 +511,10 @@ class LorenTui {
     }
 
     if (this.screen === "setup_claude") {
-      const answer = (this.prompt.buffer || "y").trim().toLowerCase();
+      const answer = (this.prompt || "y").trim().toLowerCase();
       if (answer === "" || answer === "y" || answer === "yes") {
         installClaudeIntegration({ quiet: true });
-        this.setStatus("✓ Claude Code integration installed.", GREEN);
+        this.setStatus("Claude Code integration installed.", GREEN);
       } else {
         this.setStatus("Skipping Claude Code integration for now.", YELLOW);
       }
@@ -564,33 +523,30 @@ class LorenTui {
     }
 
     if (this.screen === "setup_start") {
-      const answer = (this.prompt.buffer || "y").trim().toLowerCase();
+      const answer = (this.prompt || "y").trim().toLowerCase();
       if (answer === "" || answer === "y" || answer === "yes") {
         startServer({ quiet: true });
-        this.refreshRuntime();
-        this.setStatus("✓ Bridge started. Setup complete.", GREEN);
+        this.running = true;
+        this.setStatus("Bridge started. Setup complete.", GREEN);
       } else {
+        this.running = isServerRunning();
         this.setStatus("Setup complete. Start the bridge any time with S.", GREEN);
       }
+      this.refreshRuntime();
       this.setupRequired = false;
       this.screen = "dashboard";
     }
   }
 
-  beginSetup() {
-    this.setupRequired = true;
-    this.enterSetupKeyPrompt();
-  }
-
-  enterSetupKeyPrompt() {
+  enterSetupKeys() {
     this.screen = "setup_keys";
-    this.prompt = { buffer: "" };
+    this.prompt = "";
     this.setStatus("Welcome. Let's get Loren ready.", CYAN);
   }
 
-  enterSetupClaudePrompt() {
+  enterSetupClaude() {
     this.screen = "setup_claude";
-    this.prompt = { buffer: "Y" };
+    this.prompt = "Y";
   }
 
   async enterSetupModels() {
@@ -598,29 +554,23 @@ class LorenTui {
     this.screen = "setup_models";
   }
 
-  enterSetupStartPrompt() {
+  enterSetupStart() {
     this.screen = "setup_start";
-    this.prompt = { buffer: "Y" };
+    this.prompt = "Y";
   }
 
-  async loadModels(force = false) {
-    const { models } = await fetchAvailableModels(force);
+  async loadModels() {
+    const { models } = await fetchAvailableModels();
     this.models = models;
-    this.selectedModelIndex = Math.max(0, this.models.findIndex((model) => (model.model || model.name) === this.config.defaultModel));
-    if (this.selectedModelIndex === -1) {
-      this.selectedModelIndex = 0;
-    }
+    const activeIndex = this.models.findIndex((model) => (model.model || model.name) === this.config.defaultModel);
+    this.selectedModelIndex = activeIndex >= 0 ? activeIndex : 0;
   }
 
   applySelectedModel() {
-    if (!this.models.length) {
-      return;
-    }
-
     const modelId = this.models[this.selectedModelIndex].model || this.models[this.selectedModelIndex].name;
     setDefaultModel(modelId);
     this.refreshRuntime();
-    this.setStatus(`✓ Default model set to ${modelId}.`, GREEN);
+    this.setStatus(`Default model set to ${modelId}.`, GREEN);
   }
 
   refreshRuntime() {
@@ -645,14 +595,46 @@ async function fetchAvailableModels() {
   }
 
   const data = await response.json();
-  let models = Array.isArray(data.models) ? data.models : [];
-  models = models.sort((a, b) => {
+  const models = Array.isArray(data.models) ? data.models : [];
+  models.sort((a, b) => {
     const dateA = a.modified_at ? new Date(a.modified_at).getTime() : 0;
     const dateB = b.modified_at ? new Date(b.modified_at).getTime() : 0;
     return dateB - dateA;
   });
 
   return { config, models };
+}
+
+async function listModels() {
+  const { config, models } = await fetchAvailableModels();
+
+  console.log("\nAvailable models from Ollama Cloud:");
+  console.log("-".repeat(74));
+  console.log(`  ${pad("MODEL", 34)}${pad("SIZE", 12)}MODIFIED`);
+  console.log("-".repeat(74));
+
+  if (!models.length) {
+    console.log("  No models available right now.");
+  } else {
+    models.forEach((model) => {
+      const modelId = model.model || model.name;
+      const marker = modelId === config.defaultModel ? "*" : "o";
+      const size = formatSize(model.size);
+      const modified = model.modified_at ? new Date(model.modified_at).toLocaleDateString() : "unknown";
+      console.log(`  ${marker} ${pad(modelId, 30)}${pad(size, 12)}${modified}`);
+    });
+  }
+
+  console.log("");
+  console.log(`Total: ${models.length} model(s)`);
+  console.log(`Current default: ${config.defaultModel}`);
+  console.log("");
+}
+
+async function refreshModels() {
+  await listModels();
+  console.log("Model list refreshed.");
+  console.log("");
 }
 
 function setModelCommand(args) {
@@ -673,12 +655,6 @@ function setModelCommand(args) {
 }
 
 function setDefaultModel(requestedModel) {
-  const config = loadConfig();
-  const isValidAlias = Object.keys(config.aliases).includes(requestedModel);
-  if (!isValidAlias) {
-    // Allow direct model IDs even if they are not aliases.
-  }
-
   const envVars = loadEnvFile(envFilePath);
   envVars.DEFAULT_MODEL_ALIAS = requestedModel;
   saveEnvFile(envFilePath, envVars);
@@ -695,7 +671,7 @@ function showCurrentModel() {
 function showConfig() {
   const config = loadConfig();
   console.log("\nCurrent configuration:");
-  console.log("─".repeat(40));
+  console.log("-".repeat(40));
   console.log(`  Host:        ${config.host}`);
   console.log(`  Port:        ${config.port}`);
   console.log(`  Upstream:    ${config.upstreamBaseUrl}`);
@@ -707,7 +683,7 @@ function showConfig() {
 
 function showPaths() {
   console.log("\nLoren paths:");
-  console.log("─".repeat(40));
+  console.log("-".repeat(40));
   console.log(`  Home:        ${lorenHome}`);
   console.log(`  Config:      ${envFilePath}`);
   console.log(`  Runtime:     ${runtimeDir}`);
@@ -717,13 +693,13 @@ function showPaths() {
 function listKeys() {
   const config = loadConfig();
   console.log("\nConfigured API keys:");
-  console.log("─".repeat(40));
+  console.log("-".repeat(40));
   if (!config.apiKeys.length) {
     console.log("  none yet");
   } else {
     config.apiKeys.forEach((key, index) => {
       const masked = `${key.slice(0, 4)}...${key.slice(-4)}`;
-      const marker = index === 0 ? "●" : "○";
+      const marker = index === 0 ? "*" : "o";
       console.log(`  ${marker} [${index}] ${masked}`);
     });
   }
@@ -858,7 +834,7 @@ function showServerStatus() {
   const config = loadConfig();
   const running = isServerRunning();
   console.log("\nServer status:");
-  console.log("─".repeat(40));
+  console.log("-".repeat(40));
   console.log(`  Running:     ${running ? "yes" : "no"}`);
   console.log(`  Host:        ${config.host}`);
   console.log(`  Port:        ${config.port}`);
@@ -956,18 +932,15 @@ function printHelp() {
 }
 
 function printQuickSetup(config) {
+  printBanner();
   if (config.apiKeys.length > 0) {
-    printBanner();
     console.log(`Welcome back, ${displayName}.`);
     console.log(`${config.apiKeys.length} key(s) loaded.`);
     console.log(`${GREEN}Run \`loren\` to open the full terminal UI.${RESET}`);
-    console.log("");
-    return;
+  } else {
+    console.log(`Welcome, ${displayName}.`);
+    console.log(`${YELLOW}Run \`loren\` in an interactive terminal to finish setup.${RESET}`);
   }
-
-  printBanner();
-  console.log(`Welcome, ${displayName}.`);
-  console.log(`${YELLOW}Run \`loren\` in an interactive terminal to finish setup.${RESET}`);
   console.log("");
 }
 
@@ -986,10 +959,10 @@ function printCommandSummary() {
 }
 
 function renderBanner() {
-  const coloredBanner = ASCII_BANNER_LINES
+  const banner = ASCII_BANNER_LINES
     .map((line, index) => `${BANNER_COLORS[index] || ""}${line}${RESET}`)
     .join("\n");
-  return `${coloredBanner}\n\n${CYAN}${BOLD}LOREN CODE${RESET}\n${DIM}Smarter bridge, fewer rituals.${RESET}\n`;
+  return `${banner}\n\n${CYAN}${BOLD}LOREN CODE${RESET}\n${DIM}Smarter bridge, fewer rituals.${RESET}\n`;
 }
 
 function printBanner() {
@@ -999,7 +972,7 @@ function printBanner() {
 function renderDashboardHeader(config, running, statusMessage, statusColor) {
   const lines = [];
   lines.push(`${CYAN}Welcome back, ${displayName}.${RESET}`);
-  lines.push(`${running ? GREEN : YELLOW}${running ? "Bridge online" : "Bridge idle"}${RESET} · Model ${config.defaultModel} · ${config.apiKeys.length} key(s)`);
+  lines.push(`${running ? GREEN : YELLOW}${running ? "Bridge online" : "Bridge idle"}${RESET} - Model ${config.defaultModel} - ${config.apiKeys.length} key(s)`);
   if (statusMessage) {
     lines.push(`${statusColor}${statusMessage}${RESET}`);
   }
@@ -1007,7 +980,7 @@ function renderDashboardHeader(config, running, statusMessage, statusColor) {
   return lines.join("\n");
 }
 
-function renderSetupHeader(config, statusMessage, statusColor) {
+function renderSetupHeader(statusMessage, statusColor) {
   const lines = [];
   if (envStatus.migrated) {
     lines.push(`${MAGENTA}Previous Loren settings were imported automatically.${RESET}`);
@@ -1015,7 +988,7 @@ function renderSetupHeader(config, statusMessage, statusColor) {
     lines.push(`${GREEN}A fresh config is ready.${RESET}`);
   }
   lines.push(`${CYAN}Welcome, ${displayName}.${RESET}`);
-  lines.push(`${YELLOW}Let's get Loren ready in one smooth pass.${RESET}`);
+  lines.push(`${GREEN}Let's get Loren ready in one smooth pass.${RESET}`);
   if (statusMessage) {
     lines.push(`${statusColor}${statusMessage}${RESET}`);
   }
@@ -1024,21 +997,36 @@ function renderSetupHeader(config, statusMessage, statusColor) {
 }
 
 function renderFooter(items) {
-  const line = items.join(`${DIM}  •  ${RESET}`);
-  return `${DIM}──────────────────────────────────────────────────────────────────────────────${RESET}\n${line}\n`;
+  return `${DIM}${"-".repeat(78)}${RESET}\n${items.join(`${DIM}  *  ${RESET}`)}\n`;
 }
 
 function box(title, lines) {
   const width = 74;
-  const top = `┌─ ${title}${"─".repeat(Math.max(0, width - title.length - 3))}┐`;
-  const body = lines.map((line) => `│ ${pad(line, width - 2)}│`).join("\n");
-  const bottom = `└${"─".repeat(width)}┘`;
+  const top = `+- ${title}${"-".repeat(Math.max(0, width - title.length - 3))}+`;
+  const body = lines.map((line) => `| ${pad(stripAnsi(line), width - 2)}|`).join("\n");
+  const bottom = `+${"-".repeat(width)}+`;
   return `${top}\n${body}\n${bottom}`;
 }
 
 function pad(value, width) {
   const text = String(value ?? "");
-  return text.length >= width ? `${text.slice(0, width - 1)}…` : text.padEnd(width);
+  return text.length >= width ? `${text.slice(0, width - 3)}...` : text.padEnd(width);
+}
+
+function formatSize(bytes) {
+  if (!bytes) {
+    return "unknown";
+  }
+  const gb = bytes / (1024 ** 3);
+  return `${gb.toFixed(1)} GB`;
+}
+
+function stripAnsi(text) {
+  return String(text).replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+function color(text, ansi) {
+  return `${ansi}${text}${RESET}`;
 }
 
 function getDisplayName() {
