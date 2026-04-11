@@ -10,6 +10,7 @@ import { getEnvFilePath, getRuntimeDir } from "../src/paths.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
+const originalCwd = process.cwd();
 const stateDir = getRuntimeDir();
 const bridgePidPath = path.join(stateDir, "bridge.pid");
 const bridgeLogPath = path.join(stateDir, "bridge.log");
@@ -52,7 +53,7 @@ async function main() {
   const child = spawn(claudeExecutable.command, [...claudeExecutable.args, ...process.argv.slice(2)], {
     stdio: "inherit",
     env,
-    cwd: process.cwd(),
+    cwd: originalCwd,
     windowsHide: false,
   });
 

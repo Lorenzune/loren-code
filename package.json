@@ -1,6 +1,6 @@
 {
   "name": "loren-code",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "Terminal UI and local bridge for Ollama Cloud and Claude Code with model switching and API key rotation",
   "author": "lorenzune",
   "license": "MIT",
