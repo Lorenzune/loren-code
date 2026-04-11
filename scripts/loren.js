@@ -19,15 +19,28 @@ const logFilePath = path.join(runtimeDir, "bridge.log");
 const errorLogFilePath = path.join(runtimeDir, "bridge.err.log");
 const userHome = process.env.USERPROFILE || process.env.HOME || projectRoot;
 const claudeSettingsPath = path.join(userHome, ".claude", "settings.json");
+const displayName = getDisplayName();
 
 process.chdir(projectRoot);
 ensureRuntimeDir();
 const envStatus = ensureEnvLocal(projectRoot, { logger: { warn() {} } });
 
-const BANNER = `
+const ASCII_BANNER = `
+██╗      ██████╗ ██████╗ ███████╗███╗   ██╗     ██████╗ ██████╗ ██████╗ ███████╗
+██║     ██╔═══██╗██╔══██╗██╔════╝████╗  ██║    ██╔════╝██╔═══██╗██╔══██╗██╔════╝
+██║     ██║   ██║██████╔╝█████╗  ██╔██╗ ██║    ██║     ██║   ██║██║  ██║█████╗
+██║     ██║   ██║██╔══██╗██╔══╝  ██║╚██╗██║    ██║     ██║   ██║██║  ██║██╔══╝
+███████╗╚██████╔╝██║  ██║███████╗██║ ╚████║    ╚██████╗╚██████╔╝██████╔╝███████╗
+╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝     ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
+`;
+
+const BANNER = `${ASCII_BANNER}
 LOREN CODE
 Smarter bridge, fewer rituals.
 `;
+const GREEN = "\x1b[32m";
+const YELLOW = "\x1b[33m";
+const RESET = "\x1b[0m";
 
 const COMMANDS = {
   model: {
@@ -342,13 +355,16 @@ function showPaths() {
   console.log("");
 }
 
-function startServer() {
+function startServer(options = {}) {
+  const quiet = options.quiet === true;
   const existingPid = readPidFile();
   if (existingPid && isProcessRunning(existingPid)) {
     const config = loadConfig();
-    console.log("\nLoren is already running.");
-    console.log(`URL: ${getBridgeBaseUrl(config)}`);
-    console.log("");
+    if (!quiet) {
+      console.log("\nLoren is already running.");
+      console.log(`URL: ${getBridgeBaseUrl(config)}`);
+      console.log("");
+    }
     return;
   }
 
@@ -364,10 +380,12 @@ function startServer() {
   child.unref();
   fs.writeFileSync(pidFilePath, `${child.pid}\n`, "utf8");
 
-  const config = loadConfig();
-  console.log("\nLoren is up and listening.");
-  console.log(`URL: ${getBridgeBaseUrl(config)}`);
-  console.log("");
+  if (!quiet) {
+    const config = loadConfig();
+    console.log("\nLoren is up and listening.");
+    console.log(`URL: ${getBridgeBaseUrl(config)}`);
+    console.log("");
+  }
 }
 
 function stopServer() {
@@ -495,30 +513,29 @@ async function runSetupWizard(config) {
   });
 
   try {
-    const rawKeys = (await rl.question("Paste your Ollama API key(s), separated by commas: ")).trim();
+    const keys = await promptForApiKeys(rl);
+    const envVars = loadEnvFile(envFilePath);
+    envVars.OLLAMA_API_KEYS = keys.join(",");
+    saveEnvFile(envFilePath, envVars);
+    console.log(`${GREEN}✓ Saved ${keys.length} API key(s).${RESET}`);
+    console.log("");
 
-    if (rawKeys) {
-      const keys = splitKeyList(rawKeys);
-      const envVars = loadEnvFile(envFilePath);
-      envVars.OLLAMA_API_KEYS = keys.join(",");
-      saveEnvFile(envFilePath, envVars);
-      console.log(`\nNice. Loren is holding ${keys.length} key(s) and feeling organized.`);
-    } else {
-      console.log("\nNo keys yet. Loren will wait here and act casual about it.");
+    if (process.platform === "win32") {
+      const installClaude = (await rl.question("Install Claude Code integration too? [Y/n] ")).trim().toLowerCase();
+      if (installClaude === "" || installClaude === "y" || installClaude === "yes") {
+        installClaudeIntegration();
+        console.log(`${GREEN}✓ Claude Code integration installed.${RESET}`);
+        console.log("");
+      } else {
+        console.log("\nNo problem. You can wire Claude in later.");
+      }
     }
 
     const startNow = (await rl.question("Start the bridge now? [Y/n] ")).trim().toLowerCase();
     if (startNow === "" || startNow === "y" || startNow === "yes") {
-      startServer();
-    }
-
-    if (process.platform === "win32") {
-      const installClaude = (await rl.question("Install Claude Code integration too? [y/N] ")).trim().toLowerCase();
-      if (installClaude === "y" || installClaude === "yes") {
-        installClaudeIntegration();
-      } else {
-        console.log("\nNo problem. You can wire Claude in later.");
-      }
+      startServer({ quiet: true });
+      console.log(`${GREEN}✓ Bridge started.${RESET}`);
+      console.log("");
     }
 
     console.log("Setup complete. Fewer steps, fewer goblins.");
@@ -535,29 +552,34 @@ function printWizardIntro() {
   } else if (envStatus.created) {
     console.log("A fresh config is ready.");
   }
+  console.log(`Welcome${displayName ? `, ${displayName}` : ""}.`);
+  console.log(`${YELLOW}Run \`loren\` in an interactive terminal to finish setup.${RESET}`);
   console.log("Let's get Loren ready in one quick pass.");
   console.log("");
+  printCommandSummary();
 }
 
 function printWelcomeBack(config) {
   console.log(BANNER);
-  console.log(`Welcome back. ${config.apiKeys.length} key(s) loaded.`);
+  console.log(`Welcome back${displayName ? `, ${displayName}` : ""}.`);
+  console.log(`${config.apiKeys.length} key(s) loaded.`);
   console.log(`Current default model: ${config.defaultModel}`);
+  console.log(`${GREEN}Run \`loren start\` to launch the bridge.${RESET}`);
   console.log("");
-  console.log("Useful commands:");
-  console.log("  loren start");
-  console.log("  loren model:list");
-  console.log("  loren config:show");
-  console.log("");
+  printCommandSummary();
 }
 
 function printQuickSetup(config) {
   if (config.apiKeys.length > 0) {
-    console.log("Run `loren start` to launch the bridge.");
-    console.log("");
+    printWelcomeBack(config);
     return;
   }
 
+  console.log(BANNER);
+  console.log(`Welcome${displayName ? `, ${displayName}` : ""}.`);
+  console.log(`${YELLOW}Run \`loren\` in an interactive terminal to finish setup.${RESET}`);
+  console.log("");
+  printCommandSummary();
   console.log("Quick start:");
   console.log("  1. Run `loren` in an interactive terminal");
   console.log("  2. Add your Ollama API key(s)");
@@ -577,8 +599,26 @@ function installClaudeIntegration() {
   }
 }
 
+async function promptForApiKeys(rl) {
+  while (true) {
+    const rawKeys = (await rl.question("Paste your Ollama API key(s), separated by commas: ")).trim();
+    const keys = splitKeyList(rawKeys);
+
+    if (keys.length > 0) {
+      return keys;
+    }
+
+    console.log("At least one API key is required to continue.");
+    console.log("");
+  }
+}
+
 function printHelp() {
   console.log(BANNER);
+  printCommandSummary();
+}
+
+function printCommandSummary() {
   console.log("Commands:");
   console.log("  loren setup                 Run the setup wizard");
   console.log("  loren start                 Start the bridge");
@@ -600,6 +640,16 @@ function printHelp() {
   console.log("  loren start");
   console.log("  loren model:set gpt-oss:20b");
   console.log("");
+}
+
+function getDisplayName() {
+  const explicit = process.env.USERNAME || process.env.USER;
+  if (explicit && explicit.trim()) {
+    return explicit.trim();
+  }
+
+  const baseName = path.basename(userHome || "").trim();
+  return baseName || "";
 }
 
 main().catch((error) => {
