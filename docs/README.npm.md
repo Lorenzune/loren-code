@@ -8,6 +8,21 @@ If you configure more than one key, Loren sends requests in round-robin order ac
 
 Loren manages rotation and failover, but it does not bypass upstream limits or service terms.
 
+## Why Use Loren
+
+Loren is useful if you want Claude Code ready quickly without repeating the same setup in every project.
+
+A common workflow looks like this:
+
+- create one or more Ollama accounts
+- collect the available API keys, including free-tier keys
+- add them to Loren once
+- let Loren rotate requests across those keys in round-robin mode
+
+That helps reduce rate-limit friction and keeps Claude Code sessions usable for longer.
+
+Loren is installed globally, so once setup is done it stays ready across projects without manually redoing the same Claude Code bridge configuration every time.
+
 ## Install
 
 ```bash

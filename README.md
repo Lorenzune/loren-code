@@ -49,6 +49,21 @@ That includes the common setup where users add multiple free-tier keys to reduce
 
 Loren does not bypass Ollama Cloud limits or service terms.
 
+## Why People Use Loren
+
+Loren is built around a simple workflow:
+
+- create one or more Ollama accounts
+- collect the available API keys, including free-tier keys
+- add them to Loren once
+- let Loren serve Claude Code through those keys in round-robin mode
+
+That helps reduce rate-limit friction and makes longer Claude Code sessions more practical.
+
+In other words, Loren is useful when you want Claude Code and its tools available through Ollama Cloud without depending on an Anthropic Pro or Max subscription.
+
+Because Loren is installed globally and keeps its own user-level setup, you do not need to rewire Claude Code from scratch in every new project.
+
 ## Local Setup
 
 On first run Loren creates user config under:
