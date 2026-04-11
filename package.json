@@ -1,7 +1,7 @@
 {
   "name": "loren-code",
   "version": "0.3.2",
-  "description": "Ollama Cloud Model Manager - Dynamic model switching, API key rotation, and real-time configuration updates",
+  "description": "Terminal UI and local bridge for Ollama Cloud and Claude Code with model switching and API key rotation",
   "author": "lorenzune",
   "license": "MIT",
   "repository": {
@@ -19,9 +19,12 @@
     "claude-code",
     "ai",
     "llm",
-    "model-manager",
     "cli",
-    "bridge"
+    "bridge",
+    "terminal-ui",
+    "tui",
+    "api-key-rotation",
+    "model-switching"
   ],
   "type": "module",
   "main": "src/server.js",
