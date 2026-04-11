@@ -153,6 +153,7 @@ class LorenTui {
     this.prompt = "";
     this.models = [];
     this.selectedModelIndex = 0;
+    this.selectedKeyIndex = 0;
     this.statusMessage = "";
     this.statusColor = WHITE;
     this.config = loadConfig();
@@ -218,7 +219,7 @@ class LorenTui {
     }
 
     this.screen = "dashboard";
-    this.setStatus(`Welcome back, ${displayName}.`, CYAN);
+    this.setStatus("", WHITE);
   }
 
   render() {
@@ -230,6 +231,14 @@ class LorenTui {
       chunks.push(renderSetupHeader(this.statusMessage, this.statusColor));
       chunks.push(this.renderSetupBody());
       chunks.push(renderFooter(["[Enter] Confirm", "[Esc] Quit"]));
+    } else if (this.screen === "keys") {
+      chunks.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
+      chunks.push(this.renderKeysBody());
+      chunks.push(renderFooter(["[Up/Down] Select", "[A] Add", "[D] Remove", "[T] Rotate", "[Esc] Back", "[Q] Quit"]));
+    } else if (this.screen === "keys_add") {
+      chunks.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
+      chunks.push(this.renderAddKeyBody());
+      chunks.push(renderFooter(["[Enter] Save key", "[Esc] Back"]));
     } else if (this.screen === "models") {
       chunks.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
       chunks.push(this.renderModelsBody());
@@ -237,7 +246,7 @@ class LorenTui {
     } else {
       chunks.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
       chunks.push(this.renderDashboardBody());
-      chunks.push(renderFooter(["[S] Start/Stop", "[M] Models", "[K] Setup", "[C] Claude", "[R] Refresh", "[Q] Quit"]));
+      chunks.push(renderFooter(["[S] Start/Stop", "[M] Models", "[K] Keys", "[W] Setup", "[C] Claude", "[R] Refresh", "[Q] Quit"]));
     }
 
     process.stdout.write(chunks.join("\n"));
@@ -260,9 +269,52 @@ class LorenTui {
       box("Actions", [
         "Press S to start or stop the bridge",
         "Press M to browse models and change the default",
-        "Press K to reopen setup",
+        "Press K to manage API keys",
+        "Press W to reopen setup",
         "Press C to install Claude Code integration",
       ]),
+    ].join("\n");
+  }
+
+  renderKeysBody() {
+    const lines = [];
+    lines.push(box("API Keys", [
+      "Manage the keys Loren rotates through.",
+      "Add, remove, or rotate without leaving the terminal UI.",
+    ]));
+    lines.push("");
+
+    if (!this.config.apiKeys.length) {
+      lines.push("No keys configured yet. Press A to add your first key.");
+      return lines.join("\n");
+    }
+
+    lines.push("Configured keys:");
+    lines.push("-".repeat(74));
+    lines.push(`  ${pad("KEY", 44)}POSITION`);
+    lines.push("-".repeat(74));
+
+    for (let index = 0; index < this.config.apiKeys.length; index += 1) {
+      const key = this.config.apiKeys[index];
+      const selected = index === this.selectedKeyIndex;
+      const prefix = selected ? color(">", CYAN) : " ";
+      const marker = index === 0 ? color("*", GREEN) : "o";
+      const masked = `${key.slice(0, 8)}...${key.slice(-6)}`;
+      const position = index === 0 ? "active first key" : `slot ${index + 1}`;
+      lines.push(`${prefix} ${marker} ${pad(masked, 40)}${position}`);
+    }
+
+    return lines.join("\n");
+  }
+
+  renderAddKeyBody() {
+    return [
+      box("Add API Key", [
+        "Paste a new Ollama API key and press Enter.",
+        color("Empty input is not allowed here either.", DIM),
+      ]),
+      "",
+      `${CYAN}> ${this.prompt}${RESET}`,
     ].join("\n");
   }
 
@@ -362,6 +414,16 @@ class LorenTui {
       return;
     }
 
+    if (this.screen === "keys") {
+      await this.handleKeysKeypress(key);
+      return;
+    }
+
+    if (this.screen === "keys_add") {
+      await this.handleAddKeyKeypress(key);
+      return;
+    }
+
     if (this.screen === "models") {
       await this.handleModelsKeypress(key);
       return;
@@ -393,6 +455,9 @@ class LorenTui {
         this.screen = "models";
         return;
       case "k":
+        this.enterKeysScreen();
+        return;
+      case "w":
         this.enterSetupKeys();
         return;
       case "c":
@@ -405,6 +470,85 @@ class LorenTui {
         return;
       default:
         return;
+    }
+  }
+
+  async handleKeysKeypress(key) {
+    switch ((key.name || "").toLowerCase()) {
+      case "escape":
+      case "q":
+        this.screen = "dashboard";
+        return;
+      case "up":
+        if (this.config.apiKeys.length) {
+          this.selectedKeyIndex = (this.selectedKeyIndex - 1 + this.config.apiKeys.length) % this.config.apiKeys.length;
+        }
+        return;
+      case "down":
+        if (this.config.apiKeys.length) {
+          this.selectedKeyIndex = (this.selectedKeyIndex + 1) % this.config.apiKeys.length;
+        }
+        return;
+      case "a":
+        this.screen = "keys_add";
+        this.prompt = "";
+        this.setStatus("Paste the key and press Enter.", CYAN);
+        return;
+      case "d":
+        if (!this.config.apiKeys.length) {
+          this.setStatus("No keys to remove yet.", YELLOW);
+          return;
+        }
+        {
+          const removed = removeConfiguredKeyByIndex(this.selectedKeyIndex);
+          this.refreshRuntime();
+          this.selectedKeyIndex = Math.min(this.selectedKeyIndex, Math.max(0, this.config.apiKeys.length - 1));
+          this.setStatus(`Removed key ${removed}.`, GREEN);
+        }
+        return;
+      case "t":
+        if (this.config.apiKeys.length < 2) {
+          this.setStatus("You need at least two keys to rotate.", YELLOW);
+          return;
+        }
+        rotateConfiguredKeys();
+        this.refreshRuntime();
+        this.selectedKeyIndex = 0;
+        this.setStatus("Keys rotated. The lead key took a coffee break.", GREEN);
+        return;
+      default:
+        return;
+    }
+  }
+
+  async handleAddKeyKeypress(key) {
+    if ((key.name || "").toLowerCase() === "escape") {
+      this.enterKeysScreen();
+      return;
+    }
+
+    if ((key.name || "").toLowerCase() === "backspace") {
+      this.prompt = this.prompt.slice(0, -1);
+      return;
+    }
+
+    if ((key.name || "").toLowerCase() === "return") {
+      const newKey = this.prompt.trim();
+      if (!newKey) {
+        this.setStatus("A real key is required here.", RED);
+        return;
+      }
+
+      const added = addConfiguredKey(newKey);
+      this.refreshRuntime();
+      this.selectedKeyIndex = Math.max(0, this.config.apiKeys.indexOf(newKey));
+      this.enterKeysScreen();
+      this.setStatus(added ? "New key saved." : "That key was already in the list.", GREEN);
+      return;
+    }
+
+    if (key.sequence && !key.ctrl && !key.meta) {
+      this.prompt += key.sequence;
     }
   }
 
@@ -549,6 +693,16 @@ class LorenTui {
     this.prompt = "Y";
   }
 
+  enterKeysScreen() {
+    this.refreshRuntime();
+    this.screen = "keys";
+    if (this.config.apiKeys.length === 0) {
+      this.selectedKeyIndex = 0;
+    } else {
+      this.selectedKeyIndex = Math.min(this.selectedKeyIndex, this.config.apiKeys.length - 1);
+    }
+  }
+
   async enterSetupModels() {
     await this.loadModels();
     this.screen = "setup_models";
@@ -691,13 +845,13 @@ function showPaths() {
 }
 
 function listKeys() {
-  const config = loadConfig();
+  const keys = getConfiguredKeys();
   console.log("\nConfigured API keys:");
   console.log("-".repeat(40));
-  if (!config.apiKeys.length) {
+  if (!keys.length) {
     console.log("  none yet");
   } else {
-    config.apiKeys.forEach((key, index) => {
+    keys.forEach((key, index) => {
       const masked = `${key.slice(0, 4)}...${key.slice(-4)}`;
       const marker = index === 0 ? "*" : "o";
       console.log(`  ${marker} [${index}] ${masked}`);
@@ -714,13 +868,8 @@ function addKey(args) {
     process.exit(1);
   }
 
-  const envVars = loadEnvFile(envFilePath);
-  const existingKeys = splitKeyList(envVars.OLLAMA_API_KEYS);
-  if (!existingKeys.includes(newKey)) {
-    existingKeys.push(newKey);
-    envVars.OLLAMA_API_KEYS = existingKeys.join(",");
-    saveEnvFile(envFilePath, envVars);
-  }
+  addConfiguredKey(newKey);
+  const existingKeys = getConfiguredKeys();
 
   console.log(`\nKey added. Total keys: ${existingKeys.length}`);
   console.log("");
@@ -733,39 +882,20 @@ function removeKey(args) {
     process.exit(1);
   }
 
-  const envVars = loadEnvFile(envFilePath);
-  let existingKeys = splitKeyList(envVars.OLLAMA_API_KEYS);
-  let keyToRemove = null;
-  const index = Number.parseInt(indexOrKey, 10);
-  if (!Number.isNaN(index) && index >= 0 && index < existingKeys.length) {
-    keyToRemove = existingKeys[index];
-  } else {
-    keyToRemove = existingKeys.find((key) => key === indexOrKey) || null;
-  }
-
-  if (!keyToRemove) {
-    console.error("Key not found.");
-    process.exit(1);
-  }
-
-  existingKeys = existingKeys.filter((key) => key !== keyToRemove);
-  envVars.OLLAMA_API_KEYS = existingKeys.join(",");
-  saveEnvFile(envFilePath, envVars);
+  removeConfiguredKey(indexOrKey);
+  const existingKeys = getConfiguredKeys();
   console.log(`\nKey removed. Remaining keys: ${existingKeys.length}`);
   console.log("");
 }
 
 function rotateKeys() {
-  const envVars = loadEnvFile(envFilePath);
-  const existingKeys = splitKeyList(envVars.OLLAMA_API_KEYS);
+  const existingKeys = getConfiguredKeys();
   if (existingKeys.length < 2) {
     console.log("You need at least two keys to rotate.");
     return;
   }
 
-  const [first, ...rest] = existingKeys;
-  envVars.OLLAMA_API_KEYS = [...rest, first].join(",");
-  saveEnvFile(envFilePath, envVars);
+  rotateConfiguredKeys();
   console.log("\nKeys rotated. The first one took a well-earned break.");
   console.log("");
 }
@@ -920,6 +1050,61 @@ function splitKeyList(raw = "") {
     .filter(Boolean);
 }
 
+function getConfiguredKeys() {
+  const envVars = loadEnvFile(envFilePath);
+  return splitKeyList(envVars.OLLAMA_API_KEYS);
+}
+
+function saveConfiguredKeys(keys) {
+  const envVars = loadEnvFile(envFilePath);
+  envVars.OLLAMA_API_KEYS = keys.join(",");
+  saveEnvFile(envFilePath, envVars);
+}
+
+function addConfiguredKey(newKey) {
+  const keys = getConfiguredKeys();
+  if (keys.includes(newKey)) {
+    return false;
+  }
+  keys.push(newKey);
+  saveConfiguredKeys(keys);
+  return true;
+}
+
+function removeConfiguredKey(indexOrKey) {
+  const keys = getConfiguredKeys();
+  let keyToRemove = null;
+  const index = Number.parseInt(indexOrKey, 10);
+  if (!Number.isNaN(index) && index >= 0 && index < keys.length) {
+    keyToRemove = keys[index];
+  } else {
+    keyToRemove = keys.find((key) => key === indexOrKey) || null;
+  }
+
+  if (!keyToRemove) {
+    throw new Error("Key not found.");
+  }
+
+  const nextKeys = keys.filter((key) => key !== keyToRemove);
+  saveConfiguredKeys(nextKeys);
+  return `${keyToRemove.slice(0, 4)}...${keyToRemove.slice(-4)}`;
+}
+
+function removeConfiguredKeyByIndex(index) {
+  return removeConfiguredKey(String(index));
+}
+
+function rotateConfiguredKeys() {
+  const keys = getConfiguredKeys();
+  if (keys.length < 2) {
+    return false;
+  }
+
+  const [first, ...rest] = keys;
+  saveConfiguredKeys([...rest, first]);
+  return true;
+}
+
 function safeUnlink(filePath) {
   if (fs.existsSync(filePath)) {
     fs.unlinkSync(filePath);
@@ -953,6 +1138,9 @@ function printCommandSummary() {
   console.log("  loren status               Show bridge status");
   console.log("  loren model:list           List models");
   console.log("  loren model:set <name>     Set the default model");
+  console.log("  loren keys:add <key>       Add an API key");
+  console.log("  loren keys:remove <value>  Remove an API key");
+  console.log("  loren keys:rotate          Rotate configured keys");
   console.log("  loren keys:list            List API keys");
   console.log("  loren config:show          Show current config");
   console.log("");
@@ -962,7 +1150,8 @@ function renderBanner() {
   const banner = ASCII_BANNER_LINES
     .map((line, index) => `${BANNER_COLORS[index] || ""}${line}${RESET}`)
     .join("\n");
-  return `${banner}\n\n${CYAN}${BOLD}LOREN CODE${RESET}\n${DIM}Smarter bridge, fewer rituals.${RESET}\n`;
+  const linkLine = "github.com/lorenzune/loren-code - npmjs.com/package/loren-code";
+  return `${banner}\n${DIM}${centerText(linkLine, 88)}${RESET}\n\n${CYAN}${BOLD}LOREN CODE${RESET}\n${DIM}Smarter bridge, fewer rituals.${RESET}\n`;
 }
 
 function printBanner() {
@@ -971,8 +1160,7 @@ function printBanner() {
 
 function renderDashboardHeader(config, running, statusMessage, statusColor) {
   const lines = [];
-  lines.push(`${CYAN}Welcome back, ${displayName}.${RESET}`);
-  lines.push(`${running ? GREEN : YELLOW}${running ? "Bridge online" : "Bridge idle"}${RESET} - Model ${config.defaultModel} - ${config.apiKeys.length} key(s)`);
+  lines.push(`${CYAN}${centerText(`Welcome back, ${displayName} :)`, 88)}${RESET}`);
   if (statusMessage) {
     lines.push(`${statusColor}${statusMessage}${RESET}`);
   }
@@ -1027,6 +1215,15 @@ function stripAnsi(text) {
 
 function color(text, ansi) {
   return `${ansi}${text}${RESET}`;
+}
+
+function centerText(text, width) {
+  const value = String(text ?? "");
+  if (value.length >= width) {
+    return value;
+  }
+  const leftPadding = Math.floor((width - value.length) / 2);
+  return `${" ".repeat(leftPadding)}${value}`;
 }
 
 function getDisplayName() {

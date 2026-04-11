@@ -1,70 +1,70 @@
 # LOREN CODE
 
-Loren Code is a local bridge and CLI for Ollama Cloud and Claude Code.
+Loren Code is a local bridge and terminal UI for Ollama Cloud and Claude Code.
 
-It is aimed at two different use cases:
+If you just want to use Loren, install it from npm. It is much more convenient.
 
-- running Loren as a local bridge from the repository
-- installing the published npm package and using the `loren` CLI globally
+This repository is best treated as the development version:
 
-This repository README focuses on the project itself.
-The npm package uses a separate README tailored to package installation and first use.
+- source code
+- scripts
+- release prep
+- local development and debugging
 
-## What It Does
+The published npm package has its own README focused on installation and first use.
 
-- runs a local bridge on port `8788`
-- manages Ollama Cloud model aliases
-- rotates API keys across multiple Ollama Cloud keys
-- stores config and runtime state under `%USERPROFILE%\.lorencode`
-- includes helper scripts for Claude Code integration on Windows
+## Recommended Install
 
-## Intended Usage
+For normal usage:
 
-Loren is designed to work well when you have multiple Ollama Cloud API keys configured.
+```bash
+npm install -g loren-code
+loren
+```
 
-That includes the common setup where users add multiple free-tier keys to reduce interruptions and keep the Claude Code bridge usable for longer sessions.
-
-Loren handles key rotation and failover, but it does not bypass Ollama Cloud limits or terms.
-
-## Install Modes
-
-### 1. Repository / Development Install
-
-Use this if you want the full project, scripts, and source code.
+For development only:
 
 ```bash
 git clone https://github.com/lorenzune/loren-code.git
 cd loren-code
 npm install
-node scripts/loren.js help
+node scripts/loren.js
 ```
 
-### 2. npm Package Install
+## What Loren Does
 
-Use this if you only want the CLI.
+- runs a local bridge on port `8788`
+- provides a terminal UI through `loren`
+- manages Ollama Cloud model aliases
+- stores config and runtime state under `%USERPROFILE%\.lorencode`
+- includes helper scripts for Claude Code integration on Windows
 
-```bash
-npm install -g loren-code
-loren help
-```
+## API Keys And Rotation
 
-The published package has a dedicated npm-focused README.
+Loren is designed for setups with multiple Ollama Cloud API keys.
+
+If you configure more than one key, requests are rotated in round-robin order across the configured keys. Loren also supports manual key rotation and basic failover behavior.
+
+That includes the common setup where users add multiple free-tier keys to reduce interruptions and keep the bridge usable for longer sessions.
+
+Loren does not bypass Ollama Cloud limits or service terms.
 
 ## Local Setup
 
-If `%USERPROFILE%\.lorencode\.env.local` does not exist, Loren creates it automatically from `.env.example`.
+On first run Loren creates user config under:
 
-You still need to add real `OLLAMA_API_KEYS`.
-If you use multiple keys, Loren rotates them automatically.
+```text
+C:\Users\<you>\.lorencode\
+```
 
-Main user paths on Windows:
+Main files:
 
 ```text
 C:\Users\<you>\.lorencode\.env.local
 C:\Users\<you>\.lorencode\runtime\
 ```
 
-Example:
+Example `.env.local`:
 
 ```bash
 BRIDGE_HOST=127.0.0.1
@@ -75,17 +75,17 @@ DEFAULT_MODEL_ALIAS=gpt-oss:20b
 OLLAMA_MODEL_ALIASES={"ollama-free-auto":"gpt-oss:20b","ollama-free-fast":"gemma3:12b"}
 ```
 
-## Common Commands
+## Common Development Commands
 
 ```bash
+node scripts/loren.js
 node scripts/loren.js help
 node scripts/loren.js config:show
 node scripts/loren.js model:list
-node scripts/loren.js model:set gpt-oss:20b
-npm start
+npm test
 ```
 
-If you installed the npm package globally, the same commands work through `loren`.
+If you installed the npm package globally, use `loren` instead of `node scripts/loren.js`.
 
 ## Claude Code Integration
 

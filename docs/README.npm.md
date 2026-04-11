@@ -1,8 +1,10 @@
 # loren-code
 
-`loren-code` installs the `loren` CLI for working with a local Ollama Cloud bridge.
+`loren-code` installs the `loren` CLI and terminal UI for working with a local Ollama Cloud bridge.
 
 It is built to rotate multiple Ollama Cloud API keys, including the common setup where users configure more than one free-tier key for longer uninterrupted bridge usage.
+
+If you configure more than one key, Loren sends requests in round-robin order across the configured keys.
 
 Loren manages rotation and failover, but it does not bypass upstream limits or service terms.
 
@@ -15,7 +17,7 @@ npm install -g loren-code
 Verify:
 
 ```bash
-loren help
+loren
 ```
 
 ## First Run
@@ -31,6 +33,14 @@ C:\Users\<you>\.lorencode\.env.local
 You must add valid `OLLAMA_API_KEYS` before the bridge can make upstream requests.
 If you configure multiple keys, Loren rotates them automatically.
 
+For most users, the easiest path is:
+
+```bash
+loren
+```
+
+That opens Loren's terminal UI and guided setup.
+
 Example `.env.local`:
 
 ```bash
@@ -45,6 +55,7 @@ OLLAMA_MODEL_ALIASES={"ollama-free-auto":"gpt-oss:20b","ollama-free-fast":"gemma
 ## Main Commands
 
 ```bash
+loren
 loren help
 loren config:show
 loren status
