@@ -17,8 +17,12 @@ internal static class ClaudeWrapperLauncher
                 return 1;
             }
 
-            var parent = Directory.GetParent(launcherDir);
-            var workingDirectory = parent != null ? parent.FullName : launcherDir;
+            var workingDirectory = Environment.CurrentDirectory;
+            if (string.IsNullOrWhiteSpace(workingDirectory) || !Directory.Exists(workingDirectory))
+            {
+                var parent = Directory.GetParent(launcherDir);
+                workingDirectory = parent != null ? parent.FullName : launcherDir;
+            }
 
             var psi = new ProcessStartInfo
             {
