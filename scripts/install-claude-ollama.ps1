@@ -250,6 +250,12 @@ if ($availableModels.Count -eq 0) {
 $configuredDefaultModel = Get-EnvValue -Path $envPath -Name "DEFAULT_MODEL_ALIAS"
 if (
   -not [string]::IsNullOrWhiteSpace($configuredDefaultModel) -and
+  -not $availableModels.Contains($configuredDefaultModel)
+) {
+  [void]$availableModels.Insert(0, $configuredDefaultModel)
+}
+if (
+  -not [string]::IsNullOrWhiteSpace($configuredDefaultModel) -and
   $availableModels.Contains($configuredDefaultModel)
 ) {
   $defaultModel = $configuredDefaultModel

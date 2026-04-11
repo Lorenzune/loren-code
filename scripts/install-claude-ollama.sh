@@ -140,6 +140,13 @@ if (availableModels.length === 0) {
 }
 
 const configuredDefaultModel = env.DEFAULT_MODEL_ALIAS;
+if (
+  typeof configuredDefaultModel === "string" &&
+  configuredDefaultModel.trim().length > 0 &&
+  !availableModels.includes(configuredDefaultModel)
+) {
+  availableModels.unshift(configuredDefaultModel);
+}
 const defaultModel =
   configuredDefaultModel && availableModels.includes(configuredDefaultModel)
     ? configuredDefaultModel

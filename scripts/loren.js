@@ -17,9 +17,11 @@ const runtimeDir = getRuntimeDir();
 const pidFilePath = path.join(runtimeDir, "loren.pid");
 const logFilePath = path.join(runtimeDir, "bridge.log");
 const errorLogFilePath = path.join(runtimeDir, "bridge.err.log");
+const packageJsonPath = path.join(projectRoot, "package.json");
 const userHome = process.env.USERPROFILE || process.env.HOME || projectRoot;
 const claudeSettingsPath = path.join(userHome, ".claude", "settings.json");
 const displayName = getDisplayName();
+const packageVersion = getPackageVersion();
 
 process.chdir(projectRoot);
 ensureRuntimeDir();
@@ -54,6 +56,64 @@ const BANNER_COLORS = [
   "\x1b[38;2;188;201;255m",
   "\x1b[38;2;196;197;255m",
   "\x1b[38;2;205;193;255m",
+];
+
+const CODE_BANNER_LINES = [
+  "  ██████╗ ██████╗ ██████╗ ███████╗  ",
+  " ██╔════╝██╔═══██╗██╔══██╗██╔════╝  ",
+  " ██║     ██║   ██║██║  ██║█████╗    ",
+  " ██║     ██║   ██║██║  ██║██╔══╝    ",
+  " ╚██████╗╚██████╔╝██████╔╝███████╗  ",
+  "  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝  ",
+];
+
+const PANEL_LOREN_LINES = [
+  "   ██╗      ██████╗ ██████╗ ███████╗███╗   ██╗   ",
+  "   ██║     ██╔═══██╗██╔══██╗██╔════╝████╗  ██║   ",
+  "   ██║     ██║   ██║██████╔╝█████╗  ██╔██╗ ██║   ",
+  "   ██║     ██║   ██║██╔══██╗██╔══╝  ██║╚██╗██║   ",
+  "   ███████╗╚██████╔╝██║  ██║███████╗██║ ╚████║   ",
+  "   ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝   ",
+];
+
+const PANEL_GRADIENT_COLORS = [
+  "\x1b[38;2;224;230;255m",
+  "\x1b[38;2;212;220;255m",
+  "\x1b[38;2;198;212;255m",
+  "\x1b[38;2;190;208;255m",
+  "\x1b[38;2;180;198;255m",
+  "\x1b[38;2;170;188;255m",
+];
+
+const WELCOME_GRADIENT_COLORS = [
+  "\x1b[38;2;255;236;163m",
+  "\x1b[38;2;255;226;130m",
+  "\x1b[38;2;255;215;97m",
+  "\x1b[38;2;245;202;82m",
+];
+const SUCCESS_GRADIENT_COLORS = [
+  "\x1b[38;2;185;255;207m",
+  "\x1b[38;2;139;243;179m",
+  "\x1b[38;2;92;227;149m",
+  "\x1b[38;2;58;199;121m",
+];
+const ERROR_GRADIENT_COLORS = [
+  "\x1b[38;2;255;186;186m",
+  "\x1b[38;2;255;145;145m",
+  "\x1b[38;2;244;104;104m",
+  "\x1b[38;2;225;74;74m",
+];
+const INFO_GRADIENT_COLORS = [
+  "\x1b[38;2;198;218;255m",
+  "\x1b[38;2;177;207;255m",
+  "\x1b[38;2;156;195;255m",
+  "\x1b[38;2;136;184;255m",
+];
+const WARN_GRADIENT_COLORS = [
+  "\x1b[38;2;255;232;173m",
+  "\x1b[38;2;255;214;120m",
+  "\x1b[38;2;248;195;86m",
+  "\x1b[38;2;227;174;63m",
 ];
 
 const SUPPORTED_INSTALL_TARGETS = ["windows", "linux"];
@@ -155,6 +215,9 @@ class LorenTui {
     this.prompt = "";
     this.models = [];
     this.selectedModelIndex = 0;
+    this.modelScrollOffset = 0;
+    this.selectedInstallTargetIndex = 0;
+    this.selectedConfirmIndex = 0;
     this.selectedKeyIndex = 0;
     this.statusMessage = "";
     this.statusColor = WHITE;
@@ -227,78 +290,74 @@ class LorenTui {
 
   render() {
     const sections = [];
-    sections.push(renderBanner());
+    let footerItems = null;
 
-    let footerItems = ["[S] Start/Stop", "[M] Models", "[K] Keys", "[W] Setup", "[C] Claude", "[R] Refresh", "[Q] Quit"];
     if (this.screen.startsWith("setup_")) {
+      sections.push(renderSetupHero(this.screen));
       sections.push(renderSetupHeader(this.statusMessage, this.statusColor));
       sections.push(this.renderSetupBody());
       footerItems = this.screen === "setup_platform"
-        ? ["[W] Windows", "[L] Linux", "[Esc] Quit"]
-        : ["[Enter] Confirm", "[Esc] Quit"];
+        ? ["[Up/Down] Select", "[Enter] Confirm", "[Esc] Quit"]
+        : this.screen === "setup_keys"
+          ? ["[Tab] Next key", "[Enter] Confirm", "[Esc] Quit"]
+          : this.screen === "setup_models"
+            ? ["[Up/Down] Select", "[Enter] Confirm", "[R] Refresh", "[Esc] Quit"]
+            : ["[Enter] Confirm", "[Esc] Quit"];
     } else if (this.screen === "keys") {
       sections.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
       sections.push(this.renderKeysBody());
-      footerItems = ["[Up/Down] Select", "[A] Add", "[D] Remove", "[T] Rotate", "[Esc] Back", "[Q] Quit"];
+      footerItems = ["[Up/Down] Select", "[A] Add", "[D] Remove", "[T] Rotate", "[Esc] Back"];
     } else if (this.screen === "keys_add") {
       sections.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
       sections.push(this.renderAddKeyBody());
-      footerItems = ["[Enter] Save key", "[Esc] Back"];
+      footerItems = ["[Enter] Save", "[Esc] Back"];
     } else if (this.screen === "models") {
       sections.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
       sections.push(this.renderModelsBody());
-      footerItems = ["[Up/Down] Select", "[Enter] Set model", "[Esc] Back", "[R] Refresh", "[Q] Quit"];
+      footerItems = ["[Up/Down] Select", "[Enter] Set model", "[R] Refresh", "[Esc] Back"];
     } else {
       sections.push(renderDashboardHeader(this.config, this.running, this.statusMessage, this.statusColor));
       sections.push(this.renderDashboardBody());
     }
 
     const body = sections.join("\n");
-    const footer = renderFooter(footerItems);
+    const footer = footerItems ? renderFooter(footerItems) : "";
     process.stdout.write(renderScreen(body, footer));
   }
 
   renderDashboardBody() {
     return [
-      box("Bridge", [
-        `Status   ${this.running ? color("Running", GREEN) : color("Stopped", YELLOW)}`,
-        `URL      ${getBridgeBaseUrl(this.config)}`,
-        `Model    ${this.config.defaultModel}`,
-      ]),
-      "",
-      box("Keys", [
-        `Loaded   ${this.config.apiKeys.length}`,
-        `Home     ${lorenHome}`,
-        `Claude   ${describeClaudeTarget(this.installTarget)}`,
-      ]),
-      "",
-      box("Actions", [
-        "Press S to start or stop the bridge",
-        "Press M to browse models and change the default",
-        "Press K to manage API keys",
-        "Press W to reopen setup",
-        "Press C to install Claude Code integration",
+      gradientBox("Actions", [
+        renderActionLine("S", "start or stop the bridge", 48),
+        renderActionLine("M", "browse models and change the default", 48),
+        renderActionLine("K", "manage API keys", 48),
+        renderActionLine("W", "reopen setup", 48),
+        renderActionLine("C", "install Claude Code integration", 48),
+        renderActionLine("R", "refresh Loren status", 48),
+        renderActionLine("Q", "quit Loren", 48),
       ]),
     ].join("\n");
   }
 
   renderKeysBody() {
     const lines = [];
-    lines.push(box("API Keys", [
-      "Manage the keys Loren rotates through.",
-      "Add, remove, or rotate without leaving the terminal UI.",
+    lines.push(gradientBox("Keys", [
+      "Manage the API keys Loren rotates through.",
+      "Keep the active pool clean and ready.",
     ]));
     lines.push("");
 
     if (!this.config.apiKeys.length) {
-      lines.push("No keys configured yet. Press A to add your first key.");
+      lines.push(gradientBox("Configured Keys", [
+        "No keys configured yet.",
+        "Press A to add your first key.",
+      ]));
       return lines.join("\n");
     }
 
-    lines.push("Configured keys:");
-    lines.push("-".repeat(74));
-    lines.push(`  ${pad("KEY", 44)}POSITION`);
-    lines.push("-".repeat(74));
+    const keyLines = [];
+    keyLines.push(`  ${pad("KEY", 44)}POSITION`);
+    keyLines.push(" ".repeat(74).replace(/ /g, "─"));
 
     for (let index = 0; index < this.config.apiKeys.length; index += 1) {
       const key = this.config.apiKeys[index];
@@ -307,42 +366,48 @@ class LorenTui {
       const marker = index === 0 ? color("*", GREEN) : "o";
       const masked = `${key.slice(0, 8)}...${key.slice(-6)}`;
       const position = index === 0 ? "active first key" : `slot ${index + 1}`;
-      lines.push(`${prefix} ${marker} ${pad(masked, 40)}${position}`);
+      keyLines.push(`${prefix} ${marker} ${pad(masked, 40)}${position}`);
     }
+
+    lines.push(gradientBox("Configured Keys", keyLines, 74));
 
     return lines.join("\n");
   }
 
   renderAddKeyBody() {
     return [
-      box("Add API Key", [
+      gradientBox("Add API Key", [
         "Paste a new Ollama API key and press Enter.",
         color("Empty input is not allowed here either.", DIM),
+        color("Press Enter to save, or Esc to go back.", DIM),
       ]),
       "",
-      `${CYAN}> ${this.prompt}${RESET}`,
+      `${CYAN}> ${fitInlineInput(this.prompt, 72)}${RESET}`,
     ].join("\n");
   }
 
   renderModelsBody() {
     const lines = [];
-    lines.push(box("Model Picker", [
+    lines.push(gradientBox("Models", [
       "Pick a model with the arrow keys and press Enter.",
       "This updates Loren immediately.",
     ]));
     lines.push("");
 
     if (!this.models.length) {
-      lines.push("No models loaded yet. Press R to refresh.");
+      lines.push(gradientBox("Available Models", [
+        "No models loaded yet.",
+        "Press R to refresh.",
+      ], 74));
       return lines.join("\n");
     }
 
-    lines.push("Available models:");
-    lines.push("-".repeat(74));
-    lines.push(`  ${pad("MODEL", 34)}${pad("SIZE", 12)}MODIFIED`);
-    lines.push("-".repeat(74));
+    const modelLines = [];
+    modelLines.push(`  ${pad("MODEL", 34)}${pad("SIZE", 12)}MODIFIED`);
+    modelLines.push(" ".repeat(74).replace(/ /g, "─"));
 
-    for (let index = 0; index < this.models.length; index += 1) {
+    const { start, end } = this.getVisibleModelRange();
+    for (let index = start; index < end; index += 1) {
       const model = this.models[index];
       const modelId = model.model || model.name;
       const selected = index === this.selectedModelIndex;
@@ -351,8 +416,20 @@ class LorenTui {
       const marker = active ? color("*", GREEN) : "o";
       const size = formatSize(model.size);
       const modified = model.modified_at ? new Date(model.modified_at).toLocaleDateString() : "unknown";
-      lines.push(`${prefix} ${marker} ${pad(modelId, 30)}${pad(size, 12)}${modified}`);
+      modelLines.push(`${prefix} ${marker} ${pad(modelId, 30)}${pad(size, 12)}${modified}`);
     }
+
+    if (start > 0 || end < this.models.length) {
+      modelLines.push("");
+      modelLines.push(
+        color(
+          `Showing ${start + 1}-${end} of ${this.models.length} models`,
+          DIM,
+        ),
+      );
+    }
+
+    lines.push(gradientBox("Available Models", modelLines, 74));
 
     return lines.join("\n");
   }
@@ -360,42 +437,42 @@ class LorenTui {
   renderSetupBody() {
     if (this.screen === "setup_platform") {
       return [
-        box("Step 1 of 5 - Operating System", [
+        gradientBox("Step 1 of 5 - Operating System", [
           "Choose the machine where Claude Code should be wired.",
-          color("Press W for Windows or L for Linux.", DIM),
+          color("Choose your system and continue.", DIM),
         ]),
         "",
-        `${CYAN}> ${formatInstallTargetChoice(this.installTarget)}${RESET}`,
+        this.renderInstallTargetBody(),
       ].join("\n");
     }
 
     if (this.screen === "setup_keys") {
       return [
-        box("Step 2 of 5 - API Keys", [
-          "Paste one or more Ollama API keys, separated by commas.",
-          color("Keys are required before Loren can continue.", DIM),
+        gradientBox("Step 2 of 5 - API Keys", [
+          "Paste your Ollama API keys one by one.",
+          color("Add at least one key to continue.", DIM),
         ]),
         "",
-        `${CYAN}> ${this.prompt}${RESET}`,
+        this.renderSetupKeysInput(),
       ].join("\n");
     }
 
     if (this.screen === "setup_claude") {
       return [
-        box("Step 3 of 5 - Claude Code", [
+        gradientBox("Step 3 of 5 - Claude Code", [
           "Do you want Loren to wire Claude Code automatically?",
           color(`Recommended for ${this.installTarget}.`, DIM),
         ]),
         "",
-        `${CYAN}> ${this.prompt || "Y"}${RESET}`,
+        this.renderConfirmChoiceBody(),
       ].join("\n");
     }
 
     if (this.screen === "setup_models") {
       return [
-        box("Step 4 of 5 - Default Model", [
+        gradientBox("Step 4 of 5 - Default Model", [
           "Choose the default model Loren should use.",
-          color("Use Up/Down and press Enter.", DIM),
+          color("Pick one model to continue.", DIM),
         ]),
         "",
         this.renderModelsBody(),
@@ -404,16 +481,48 @@ class LorenTui {
 
     if (this.screen === "setup_start") {
       return [
-        box("Step 5 of 5 - Start Bridge", [
+        gradientBox("Step 5 of 5 - Start Bridge", [
           "Everything is ready.",
           color("Start the bridge now?", DIM),
         ]),
         "",
-        `${CYAN}> ${this.prompt || "Y"}${RESET}`,
+        this.renderConfirmChoiceBody(),
       ].join("\n");
     }
 
     return "";
+  }
+
+  renderSetupKeysInput() {
+    const rawLines = String(this.prompt || "").split("\n");
+    const visibleLines = rawLines.length ? rawLines : [""];
+    if (visibleLines.length === 1 && visibleLines[0] === "") {
+      return `${CYAN}> ${BOLD}${fitInlineInput("", 72)}${RESET}`;
+    }
+
+    return visibleLines
+      .map((line, index) => {
+        const isActiveLine = index === visibleLines.length - 1;
+        const prefix = isActiveLine ? `${CYAN}>${RESET}` : `${DIM}-${RESET}`;
+        const content = fitInlineInput(line, 72);
+        if (isActiveLine) {
+          return `${prefix} ${CYAN}${BOLD}${content || " "}${RESET}`;
+        }
+        return `${prefix} ${DIM}${content || " "}${RESET}`;
+      })
+      .join("\n");
+  }
+
+  renderConfirmChoiceBody() {
+    const options = ["Yes", "No"];
+    return options
+      .map((option, index) => {
+        const selected = index === this.selectedConfirmIndex;
+        const prefix = selected ? color(">", CYAN) : " ";
+        const marker = selected ? color("*", GREEN) : "o";
+        return `${prefix} ${marker} ${option}`;
+      })
+      .join("\n");
   }
 
   async handleKeypress(key) {
@@ -564,7 +673,7 @@ class LorenTui {
       return;
     }
 
-    if (key.sequence && !key.ctrl && !key.meta) {
+    if (isPrintableInputSequence(key.sequence) && !key.ctrl && !key.meta) {
       this.prompt += key.sequence;
     }
   }
@@ -578,11 +687,13 @@ class LorenTui {
       case "up":
         if (this.models.length) {
           this.selectedModelIndex = (this.selectedModelIndex - 1 + this.models.length) % this.models.length;
+          this.ensureModelSelectionVisible();
         }
         return;
       case "down":
         if (this.models.length) {
           this.selectedModelIndex = (this.selectedModelIndex + 1) % this.models.length;
+          this.ensureModelSelectionVisible();
         }
         return;
       case "return":
@@ -605,17 +716,18 @@ class LorenTui {
         this.shouldExit = true;
         return;
       }
-      if (name === "w") {
-        saveInstallTarget("windows");
-        this.installTarget = "windows";
-        this.setStatus("Target system set to windows.", GREEN);
-        this.enterSetupKeys();
+      if (name === "up" || name === "down") {
+        const direction = name === "up" ? -1 : 1;
+        const options = SUPPORTED_INSTALL_TARGETS;
+        this.selectedInstallTargetIndex =
+          (this.selectedInstallTargetIndex + direction + options.length) % options.length;
         return;
       }
-      if (name === "l") {
-        saveInstallTarget("linux");
-        this.installTarget = "linux";
-        this.setStatus("Target system set to linux.", GREEN);
+      if (name === "return") {
+        const selectedTarget = SUPPORTED_INSTALL_TARGETS[this.selectedInstallTargetIndex] || getDefaultInstallTarget();
+        saveInstallTarget(selectedTarget);
+        this.installTarget = selectedTarget;
+        this.setStatus(`Target system set to ${selectedTarget}.`, GREEN);
         this.enterSetupKeys();
         return;
       }
@@ -624,6 +736,11 @@ class LorenTui {
 
     if (this.screen === "setup_models") {
       await this.handleSetupModelsKeypress(key);
+      return;
+    }
+
+    if (this.screen === "setup_claude" || this.screen === "setup_start") {
+      await this.handleSetupConfirmKeypress(key);
       return;
     }
 
@@ -637,12 +754,20 @@ class LorenTui {
       return;
     }
 
+    if (this.screen === "setup_keys" && (key.name || "").toLowerCase() === "tab") {
+      const trimmed = this.prompt.trimEnd();
+      if (trimmed.length > 0 && !trimmed.endsWith(",") && !trimmed.endsWith("\n")) {
+        this.prompt = `${trimmed}\n`;
+      }
+      return;
+    }
+
     if ((key.name || "").toLowerCase() === "return") {
       await this.commitSetupPrompt();
       return;
     }
 
-    if (key.sequence && !key.ctrl && !key.meta) {
+    if (isPrintableInputSequence(key.sequence) && !key.ctrl && !key.meta) {
       this.prompt += key.sequence;
     }
   }
@@ -655,11 +780,13 @@ class LorenTui {
       case "up":
         if (this.models.length) {
           this.selectedModelIndex = (this.selectedModelIndex - 1 + this.models.length) % this.models.length;
+          this.ensureModelSelectionVisible();
         }
         return;
       case "down":
         if (this.models.length) {
           this.selectedModelIndex = (this.selectedModelIndex + 1) % this.models.length;
+          this.ensureModelSelectionVisible();
         }
         return;
       case "return":
@@ -667,6 +794,23 @@ class LorenTui {
           this.applySelectedModel();
           this.enterSetupStart();
         }
+        return;
+      default:
+        return;
+    }
+  }
+
+  async handleSetupConfirmKeypress(key) {
+    switch ((key.name || "").toLowerCase()) {
+      case "escape":
+        this.shouldExit = true;
+        return;
+      case "up":
+      case "down":
+        this.selectedConfirmIndex = this.selectedConfirmIndex === 0 ? 1 : 0;
+        return;
+      case "return":
+        await this.commitSetupPrompt();
         return;
       default:
         return;
@@ -691,8 +835,8 @@ class LorenTui {
     }
 
     if (this.screen === "setup_claude") {
-      const answer = (this.prompt || "y").trim().toLowerCase();
-      if (answer === "" || answer === "y" || answer === "yes") {
+      const answerYes = this.selectedConfirmIndex === 0;
+      if (answerYes) {
         installClaudeIntegration({ quiet: true, targetPlatform: this.installTarget });
         this.setStatus(`Claude Code integration installed for ${this.installTarget}.`, GREEN);
       } else {
@@ -703,11 +847,14 @@ class LorenTui {
     }
 
     if (this.screen === "setup_start") {
-      const answer = (this.prompt || "y").trim().toLowerCase();
-      if (answer === "" || answer === "y" || answer === "yes") {
+      const answerYes = this.selectedConfirmIndex === 0;
+      if (answerYes) {
         startServer({ quiet: true });
-        this.running = true;
-        this.setStatus("Bridge started. Setup complete.", GREEN);
+        this.running = waitForServerStart();
+        this.setStatus(
+          this.running ? "Bridge started. Setup complete." : "Loren could not start the bridge.",
+          this.running ? GREEN : RED,
+        );
       } else {
         this.running = isServerRunning();
         this.setStatus("Setup complete. Start the bridge any time with S.", GREEN);
@@ -721,6 +868,7 @@ class LorenTui {
   enterSetupPlatform() {
     this.screen = "setup_platform";
     this.prompt = this.installTarget;
+    this.selectedInstallTargetIndex = Math.max(0, SUPPORTED_INSTALL_TARGETS.indexOf(this.installTarget));
     this.setStatus("Welcome. Let's choose your target system first.", CYAN);
   }
 
@@ -731,7 +879,7 @@ class LorenTui {
 
   enterSetupClaude() {
     this.screen = "setup_claude";
-    this.prompt = "Y";
+    this.selectedConfirmIndex = 0;
   }
 
   enterKeysScreen() {
@@ -751,14 +899,16 @@ class LorenTui {
 
   enterSetupStart() {
     this.screen = "setup_start";
-    this.prompt = "Y";
+    this.selectedConfirmIndex = 0;
   }
 
   async loadModels() {
-    const { models } = await fetchAvailableModels();
-    this.models = models;
+    const { config, models } = await fetchAvailableModels();
+    this.models = buildSelectableModels(config, models);
     const activeIndex = this.models.findIndex((model) => (model.model || model.name) === this.config.defaultModel);
     this.selectedModelIndex = activeIndex >= 0 ? activeIndex : 0;
+    this.modelScrollOffset = 0;
+    this.ensureModelSelectionVisible();
   }
 
   applySelectedModel() {
@@ -771,6 +921,7 @@ class LorenTui {
   refreshRuntime() {
     this.config = loadConfig();
     this.installTarget = getConfiguredInstallTarget();
+    this.selectedInstallTargetIndex = Math.max(0, SUPPORTED_INSTALL_TARGETS.indexOf(this.installTarget));
     this.running = isServerRunning();
   }
 
@@ -778,7 +929,42 @@ class LorenTui {
     this.statusMessage = message;
     this.statusColor = color;
   }
+
+  getVisibleModelRange() {
+    const visibleCount = this.getVisibleModelCount();
+    const maxStart = Math.max(0, this.models.length - visibleCount);
+    const start = Math.min(this.modelScrollOffset, maxStart);
+    const end = Math.min(this.models.length, start + visibleCount);
+    return { start, end };
+  }
+
+  getVisibleModelCount() {
+    return 10;
+  }
+
+  ensureModelSelectionVisible() {
+    const visibleCount = this.getVisibleModelCount();
+    if (this.selectedModelIndex < this.modelScrollOffset) {
+      this.modelScrollOffset = this.selectedModelIndex;
+      return;
+    }
+
+    if (this.selectedModelIndex >= this.modelScrollOffset + visibleCount) {
+      this.modelScrollOffset = this.selectedModelIndex - visibleCount + 1;
+    }
+  }
 }
+
+LorenTui.prototype.renderInstallTargetBody = function renderInstallTargetBody() {
+  return SUPPORTED_INSTALL_TARGETS
+    .map((target, index) => {
+      const selected = index === this.selectedInstallTargetIndex;
+      const prefix = selected ? color(">", CYAN) : " ";
+      const marker = selected ? color("*", GREEN) : "o";
+      return `${prefix} ${marker} ${formatInstallTargetLabel(target)}`;
+    })
+    .join("\n");
+};
 
 async function fetchAvailableModels() {
   const config = loadConfig();
@@ -801,18 +987,65 @@ async function fetchAvailableModels() {
   return { config, models };
 }
 
+function buildSelectableModels(config, upstreamModels) {
+  const modelMap = new Map();
+
+  for (const model of upstreamModels) {
+    const modelId = model.model || model.name;
+    if (!modelId) {
+      continue;
+    }
+    modelMap.set(modelId, { ...model, model: modelId });
+  }
+
+  for (const [alias, target] of Object.entries(config.aliases || {})) {
+    if (!modelMap.has(alias)) {
+      modelMap.set(alias, {
+        model: alias,
+        name: alias,
+        size: null,
+        modified_at: null,
+        aliasTarget: target || null,
+      });
+    }
+  }
+
+  if (config.defaultModel && !modelMap.has(config.defaultModel)) {
+    modelMap.set(config.defaultModel, {
+      model: config.defaultModel,
+      name: config.defaultModel,
+      size: null,
+      modified_at: null,
+      aliasTarget: (config.aliases || {})[config.defaultModel] || null,
+    });
+  }
+
+  const selectableModels = Array.from(modelMap.values());
+  selectableModels.sort((a, b) => {
+    const dateA = a.modified_at ? new Date(a.modified_at).getTime() : 0;
+    const dateB = b.modified_at ? new Date(b.modified_at).getTime() : 0;
+    if (dateA !== dateB) {
+      return dateB - dateA;
+    }
+    return String(a.model || a.name).localeCompare(String(b.model || b.name));
+  });
+
+  return selectableModels;
+}
+
 async function listModels() {
   const { config, models } = await fetchAvailableModels();
+  const selectableModels = buildSelectableModels(config, models);
 
   console.log("\nAvailable models from Ollama Cloud:");
   console.log("-".repeat(74));
   console.log(`  ${pad("MODEL", 34)}${pad("SIZE", 12)}MODIFIED`);
   console.log("-".repeat(74));
 
-  if (!models.length) {
+  if (!selectableModels.length) {
     console.log("  No models available right now.");
   } else {
-    models.forEach((model) => {
+    selectableModels.forEach((model) => {
       const modelId = model.model || model.name;
       const marker = modelId === config.defaultModel ? "*" : "o";
       const size = formatSize(model.size);
@@ -822,7 +1055,7 @@ async function listModels() {
   }
 
   console.log("");
-  console.log(`Total: ${models.length} model(s)`);
+  console.log(`Total: ${selectableModels.length} model(s)`);
   console.log(`Current default: ${config.defaultModel}`);
   console.log("");
 }
@@ -1017,6 +1250,17 @@ function showServerStatus() {
 function isServerRunning() {
   const pid = readPidFile();
   return pid ? isProcessRunning(pid) : false;
+}
+
+function waitForServerStart(timeoutMs = 3000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (isServerRunning()) {
+      return true;
+    }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+  }
+  return isServerRunning();
 }
 
 function readPidFile() {
@@ -1236,18 +1480,58 @@ function renderBanner() {
     .map((line, index) => `${BANNER_COLORS[index] || ""}${line}${RESET}`)
     .join("\n");
   const linkLine = "github.com/lorenzune/loren-code - npmjs.com/package/loren-code";
-  return `${banner}\n${DIM}${centerText(linkLine, 88)}${RESET}\n\n${CYAN}${BOLD}LOREN CODE${RESET}\n${DIM}Smarter bridge, fewer rituals.${RESET}\n`;
+  return `${banner}\n${DIM}${centerText(linkLine, 88)}${RESET}\n\n${CYAN}${BOLD}${centerText("LOREN", 88)}${RESET}\n${CYAN}${BOLD}${centerText("CODE", 88)}${RESET}\n${DIM}${centerText("Smarter bridge, fewer rituals.", 88)}${RESET}\n`;
 }
 
 function printBanner() {
   console.log(renderBanner());
 }
 
+function renderDashboardHero(config, running) {
+  const leftWidth = 51;
+  const rightWidth = 38;
+  const bannerBlock = PANEL_LOREN_LINES.map((line, index) => `${PANEL_GRADIENT_COLORS[index] || ""}${line}${RESET}`);
+  const codeBlock = CODE_BANNER_LINES.map((line, index) => `${PANEL_GRADIENT_COLORS[index] || ""}${centerText(line, leftWidth)}${RESET}`);
+  const welcomeLine = centerText(`WELCOME BACK ${displayName.toUpperCase()} :)`, leftWidth);
+  const leftLines = [
+    "",
+    ...bannerBlock,
+    ...codeBlock,
+    "",
+    renderGradientText(welcomeLine, WELCOME_GRADIENT_COLORS),
+    "",
+  ];
+
+  const claudeInstalled = isClaudeIntegrationInstalled();
+  const claudeStatus = claudeInstalled
+    ? `${PANEL_GRADIENT_COLORS[3]}installed${RESET}`
+    : `${ERROR_GRADIENT_COLORS[2]}not installed${RESET}`;
+
+  const rightLines = [
+    "",
+    heroLine(
+      "Bridge Status",
+      running ? `${PANEL_GRADIENT_COLORS[3]}Running${RESET}` : `${ERROR_GRADIENT_COLORS[2]}Stopped${RESET}`,
+    ),
+    heroLine("URL", `${PANEL_GRADIENT_COLORS[2]}${shortenPath(getBridgeBaseUrl(config), rightWidth - 16)}${RESET}`),
+    heroLine("Home", `${WHITE}${lorenHome}${RESET}`),
+    heroLine("Claude", claudeStatus),
+    "",
+    heroLine("Model", `${PANEL_GRADIENT_COLORS[2]}${shortenPath(config.defaultModel, rightWidth - 0)}${RESET}`),
+    heroLine("Keys Loaded", `${PANEL_GRADIENT_COLORS[2]}${String(config.apiKeys.length)}${RESET}`),
+    "",
+    heroLine("LOREN V.", `${PANEL_GRADIENT_COLORS[2]}${packageVersion}${RESET}`),
+    "",
+  ];
+
+  const linkLine = "github.com/lorenzune/loren-code - npmjs.com/package/loren-code";
+  return splitGradientBox(leftLines, rightLines, leftWidth, rightWidth, `${DIM}${centerText(linkLine, leftWidth + rightWidth + 3)}${RESET}`);
+}
+
 function renderDashboardHeader(config, running, statusMessage, statusColor) {
-  const lines = [];
-  lines.push(`${CYAN}${centerText(`Welcome back, ${displayName} :)`, 88)}${RESET}`);
+  const lines = [renderDashboardHero(config, running)];
   if (statusMessage) {
-    lines.push(`${statusColor}${statusMessage}${RESET}`);
+    lines.push(formatStatusBanner(statusMessage, statusColor, 106));
   }
   lines.push("");
   return lines.join("\n");
@@ -1257,47 +1541,223 @@ function describeClaudeTarget(target) {
   return `${target} installer ready`;
 }
 
+function isClaudeIntegrationInstalled() {
+  return fs.existsSync(claudeSettingsPath);
+}
+
 function renderSetupHeader(statusMessage, statusColor) {
   const lines = [];
   if (envStatus.migrated) {
-    lines.push(`${MAGENTA}Previous Loren settings were imported automatically.${RESET}`);
+    lines.push(formatStatusBanner("Previous Loren settings were imported automatically.", MAGENTA, 88));
   } else if (envStatus.created) {
-    lines.push(`${GREEN}A fresh config is ready.${RESET}`);
+    lines.push(formatStatusBanner("A fresh config is ready.", GREEN, 88));
   }
-  lines.push(`${CYAN}Welcome, ${displayName}.${RESET}`);
-  lines.push(`${GREEN}Let's get Loren ready in one smooth pass.${RESET}`);
+  lines.push(formatStatusBanner("Let's get Loren ready in one smooth pass.", GREEN, 88));
   if (statusMessage) {
-    lines.push(`${statusColor}${statusMessage}${RESET}`);
+    lines.push(formatStatusBanner(statusMessage, statusColor, 88));
   }
   lines.push("");
   return lines.join("\n");
 }
 
-function renderFooter(items) {
-  return `${DIM}${"-".repeat(78)}${RESET}\n${items.join(`${DIM}  *  ${RESET}`)}\n`;
+function renderSetupHero(screen) {
+  const leftWidth = 51;
+  const rightWidth = 38;
+  const bannerBlock = PANEL_LOREN_LINES.map((line, index) => `${PANEL_GRADIENT_COLORS[index] || ""}${line}${RESET}`);
+  const codeBlock = CODE_BANNER_LINES.map((line, index) => `${PANEL_GRADIENT_COLORS[index] || ""}${centerText(line, leftWidth)}${RESET}`);
+  const welcomeLine = centerText(`WELCOME ${displayName.toUpperCase()} :)`, leftWidth);
+  const stepMap = {
+    setup_platform: "Setup 1/5",
+    setup_keys: "Setup 2/5",
+    setup_claude: "Setup 3/5",
+    setup_models: "Setup 4/5",
+    setup_start: "Setup 5/5",
+  };
+
+  const leftLines = [
+    "",
+    ...bannerBlock,
+    ...codeBlock,
+    "",
+    renderGradientText(welcomeLine, WELCOME_GRADIENT_COLORS),
+    "",
+  ];
+
+  const rightLines = [
+    "",
+    heroLine("Mode", `${PANEL_GRADIENT_COLORS[2]}Setup${RESET}`),
+    heroLine("Progress", `${PANEL_GRADIENT_COLORS[3]}${stepMap[screen] || "Setup"}${RESET}`),
+    heroLine("Target", `${PANEL_GRADIENT_COLORS[2]}${getConfiguredInstallTarget()}${RESET}`),
+    heroLine("Keys", `${PANEL_GRADIENT_COLORS[2]}${String(loadConfig().apiKeys.length)}${RESET}`),
+    "",
+    heroLine("LOREN V.", color(packageVersion, GREEN)),
+    "",
+  ];
+
+  const linkLine = "github.com/lorenzune/loren-code - npmjs.com/package/loren-code";
+  return splitGradientBox(leftLines, rightLines, leftWidth, rightWidth, `${DIM}${centerText(linkLine, leftWidth + rightWidth + 3)}${RESET}`);
 }
 
-function renderScreen(body, footer) {
+function renderScreen(body, footer = "") {
   const rows = Number.isInteger(process.stdout.rows) ? process.stdout.rows : 40;
   const bodyLines = countRenderedLines(body);
-  const footerLines = countRenderedLines(footer);
-  const paddingLines = Math.max(0, rows - bodyLines - footerLines);
+  const footerLines = footer ? countRenderedLines(footer) + 1 : 0;
+  const paddingLines = Math.min(1, Math.max(0, rows - bodyLines - footerLines));
   const padding = paddingLines > 0 ? `${"\n".repeat(paddingLines)}` : "";
-  return `${CLEAR}${body}${padding}\n${footer}`;
+  return footer ? `${CLEAR}${body}${padding}\n${footer}` : `${CLEAR}${body}${padding}`;
 }
 
 function box(title, lines) {
   const width = 74;
-  const top = `+- ${title}${"-".repeat(Math.max(0, width - title.length - 3))}+`;
-  const body = lines.map((line) => `| ${pad(stripAnsi(line), width - 2)}|`).join("\n");
-  const bottom = `+${"-".repeat(width)}+`;
+  const top = `╭─ ${title}${"─".repeat(Math.max(0, width - title.length - 3))}╮`;
+  const body = lines.map((line) => `│ ${pad(stripAnsi(line), width - 2)}│`).join("\n");
+  const bottom = `╰${"─".repeat(width)}╯`;
   return `${top}\n${body}\n${bottom}`;
+}
+
+function gradientBox(title, lines, width = 50) {
+  const titleText = ` ${title} `;
+  const titlePad = Math.max(0, width - titleText.length);
+  const top = `${PANEL_GRADIENT_COLORS[0]}╭${"─".repeat(2)}${BOLD}${WHITE}${titleText}${RESET}${PANEL_GRADIENT_COLORS[0]}${"─".repeat(titlePad)}╮${RESET}`;
+  const body = lines
+    .map((line, index) => {
+      const borderColor = PANEL_GRADIENT_COLORS[Math.min(index + 1, PANEL_GRADIENT_COLORS.length - 1)] || PANEL_GRADIENT_COLORS[0];
+      return `${borderColor}│${RESET} ${padAnsi(line, width)} ${borderColor}│${RESET}`;
+    })
+    .join("\n");
+  const bottom = `${PANEL_GRADIENT_COLORS[PANEL_GRADIENT_COLORS.length - 1]}╰${"─".repeat(width + 2)}╯${RESET}`;
+  return `${top}\n${body}\n${bottom}`;
+}
+
+function splitBox(leftLines, rightLines, leftWidth = 36, rightWidth = 64) {
+  const totalWidth = leftWidth + rightWidth + 3;
+  const top = `┌${"─".repeat(leftWidth + 2)}┬${"─".repeat(rightWidth + 2)}┐`;
+  const bottom = `└${"─".repeat(totalWidth + 2)}┘`;
+  const rowCount = Math.max(leftLines.length, rightLines.length);
+  const rows = [];
+
+  for (let index = 0; index < rowCount; index += 1) {
+    const left = padAnsi(leftLines[index] || "", leftWidth);
+    const right = padAnsi(rightLines[index] || "", rightWidth);
+    rows.push(`│ ${left} │ ${right} │`);
+  }
+
+  return `${top}\n${rows.join("\n")}\n${bottom}`;
 }
 
 function pad(value, width) {
   const text = String(value ?? "");
   return text.length >= width ? `${text.slice(0, width - 3)}...` : text.padEnd(width);
 }
+
+function splitGradientBox(leftLines, rightLines, leftWidth = 36, rightWidth = 64, footerText = "") {
+  const totalWidth = leftWidth + rightWidth + 3;
+  const top = `${PANEL_GRADIENT_COLORS[0]}╭${"─".repeat(leftWidth + 2)}┬${"─".repeat(rightWidth + 2)}╮${RESET}`;
+  const bottom = `${PANEL_GRADIENT_COLORS[PANEL_GRADIENT_COLORS.length - 1]}╰${"─".repeat(totalWidth + 2)}╯${RESET}`;
+  const rowCount = Math.max(leftLines.length, rightLines.length);
+  const rows = [];
+
+  for (let index = 0; index < rowCount; index += 1) {
+    const left = padAnsi(leftLines[index] || "", leftWidth);
+    const right = padAnsi(rightLines[index] || "", rightWidth);
+    const borderColor = PANEL_GRADIENT_COLORS[Math.min(index, PANEL_GRADIENT_COLORS.length - 1)] || PANEL_GRADIENT_COLORS[0];
+    rows.push(`${borderColor}│${RESET} ${left} ${borderColor}│${RESET} ${right} ${borderColor}│${RESET}`);
+  }
+
+  if (footerText) {
+    const borderColor = PANEL_GRADIENT_COLORS[PANEL_GRADIENT_COLORS.length - 1];
+    rows.push(`${borderColor}├${"─".repeat(totalWidth + 2)}┤${RESET}`);
+    rows.push(`${borderColor}│${RESET} ${padAnsi(footerText, totalWidth)} ${borderColor}│${RESET}`);
+  }
+
+  return `${top}\n${rows.join("\n")}\n${bottom}`;
+}
+
+function padAnsi(value, width) {
+  const text = String(value ?? "");
+  const visible = stripAnsi(text);
+  if (visible.length >= width) {
+    return `${visible.slice(0, width - 3)}...`;
+  }
+  return `${text}${" ".repeat(width - visible.length)}`;
+}
+
+function renderActionLine(command, description, width) {
+  const commandText = `${CYAN}${BOLD}${command}${RESET}`;
+  const line = `${WHITE}Press ${commandText}${WHITE} to ${description}${RESET}`;
+  return padAnsi(line, width);
+}
+
+function heroLine(label, value) {
+  return `${BOLD}${PANEL_GRADIENT_COLORS[1]}${label}:${RESET} ${value}`;
+}
+
+function renderGradientText(text, colors) {
+  const value = String(text ?? "");
+  let result = "";
+  let visibleIndex = 0;
+
+  for (const character of value) {
+    if (character === " ") {
+      result += character;
+      continue;
+    }
+
+    const colorIndex = Math.min(
+      colors.length - 1,
+      Math.floor((visibleIndex / Math.max(1, value.replace(/\s/g, "").length - 1)) * (colors.length - 1)),
+    );
+    result += `${colors[colorIndex]}${character}${RESET}`;
+    visibleIndex += 1;
+  }
+
+  return result;
+}
+
+function renderFooter(items) {
+  return roundedFooterBox(formatFooterItems(items), 78);
+}
+
+function getStatusGradient(statusColor) {
+  switch (statusColor) {
+    case GREEN:
+      return SUCCESS_GRADIENT_COLORS;
+    case RED:
+      return ERROR_GRADIENT_COLORS;
+    case YELLOW:
+      return WARN_GRADIENT_COLORS;
+    case CYAN:
+    case MAGENTA:
+      return INFO_GRADIENT_COLORS;
+    default:
+      return null;
+  }
+}
+
+function formatStatusBanner(message, statusColor, width) {
+  const centered = centerText(message, width);
+  const gradient = getStatusGradient(statusColor);
+  if (gradient) {
+    return renderGradientText(centered, gradient);
+  }
+  return `${statusColor}${centered}${RESET}`;
+}
+
+function formatFooterItems(items) {
+  return items
+    .map((item) => item.replace(/\[([^\]]+)\]/g, `${CYAN}[${BOLD}$1${RESET}${CYAN}]${RESET}`))
+    .join(`${DIM}  *  ${RESET}`);
+}
+
+function roundedFooterBox(content, width) {
+  const visibleContent = stripAnsi(content);
+  const innerWidth = Math.max(width - 2, visibleContent.length);
+  const top = `${DIM}╭${"─".repeat(innerWidth + 2)}╮${RESET}`;
+  const body = `${DIM}│${RESET} ${padAnsi(content, innerWidth)} ${DIM}│${RESET}`;
+  const bottom = `${DIM}╰${"─".repeat(innerWidth + 2)}╯${RESET}`;
+  return `${top}\n${body}\n${bottom}`;
+}
+
 
 function formatSize(bytes) {
   if (!bytes) {
@@ -1312,7 +1772,32 @@ function stripAnsi(text) {
 }
 
 function countRenderedLines(text) {
-  return stripAnsi(text).split("\n").length;
+  const columns = getTerminalColumns();
+  return stripAnsi(text)
+    .split("\n")
+    .reduce((total, line) => total + Math.max(1, Math.ceil(line.length / columns)), 0);
+}
+
+function getTerminalColumns() {
+  return Number.isInteger(process.stdout.columns) && process.stdout.columns > 0
+    ? process.stdout.columns
+    : 80;
+}
+
+function fitInlineInput(value, maxWidth) {
+  const text = String(value ?? "");
+  if (text.length <= maxWidth) {
+    return text;
+  }
+  return `...${text.slice(-(maxWidth - 3))}`;
+}
+
+function isPrintableInputSequence(sequence) {
+  if (typeof sequence !== "string" || sequence.length === 0) {
+    return false;
+  }
+
+  return !/[\x00-\x1F\x7F]/.test(sequence);
 }
 
 function color(text, ansi) {
@@ -1328,8 +1813,29 @@ function centerText(text, width) {
   return `${" ".repeat(leftPadding)}${value}`;
 }
 
+function shortenPath(value, maxWidth) {
+  const text = String(value ?? "");
+  if (text.length <= maxWidth) {
+    return text;
+  }
+  return `...${text.slice(-(maxWidth - 3))}`;
+}
+
+function getPackageVersion() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+    return pkg.version || "dev";
+  } catch {
+    return process.env.npm_package_version || "dev";
+  }
+}
+
 function formatInstallTargetChoice(target) {
   return target === "linux" ? "[L] Linux" : "[W] Windows";
+}
+
+function formatInstallTargetLabel(target) {
+  return target === "linux" ? "Linux" : "Windows";
 }
 
 function getDisplayName() {
